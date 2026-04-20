@@ -1,4 +1,24 @@
 import rateLimit from 'express-rate-limit';
+import type { Request } from 'express';
+
+/**
+ * Estrae l'IP del client con fallback robusto.
+ *
+ * In Vite middleware mode (dev) o dietro proxy, `req.ip` può essere undefined
+ * all'arrivo del middleware: il rate limiter allora esplode con
+ * ERR_ERL_UNDEFINED_IP_ADDRESS. Qui proviamo in ordine: req.ip (valore di
+ * Express), x-forwarded-for (primo hop dietro proxy), socket remoto, e in
+ * ultima istanza una chiave statica ("local") cosi' il limiter continua
+ * a funzionare senza piantarsi.
+ */
+function safeKeyGenerator(req: Request): string {
+  if (req.ip) return req.ip;
+  const fwd = req.headers['x-forwarded-for'];
+  if (typeof fwd === 'string' && fwd.length) return fwd.split(',')[0].trim();
+  const remote = req.socket?.remoteAddress;
+  if (remote) return remote;
+  return 'local';
+}
 
 /**
  * Rate limiter per endpoint di autenticazione: 5 tentativi ogni 15 minuti
@@ -9,6 +29,7 @@ export const authLimiter = rateLimit({
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: safeKeyGenerator,
   message: {
     success: false,
     error: 'Troppi tentativi. Riprova tra qualche minuto.',
@@ -27,6 +48,7 @@ export const changePasswordLimiter = rateLimit({
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: safeKeyGenerator,
   message: {
     error: 'Troppi tentativi di cambio password. Riprova tra qualche minuto.',
   },
@@ -41,6 +63,7 @@ export const apiLimiter = rateLimit({
   max: 60,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: safeKeyGenerator,
   message: { error: 'Troppe richieste. Riprova tra qualche istante.' },
 });
 
@@ -54,5 +77,6 @@ export const globalApiLimiter = rateLimit({
   max: 300,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: safeKeyGenerator,
   message: { error: 'Troppe richieste. Riprova tra qualche istante.' },
 });
