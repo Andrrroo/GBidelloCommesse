@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
@@ -37,6 +38,7 @@ type ResourceSource = 'anagrafica' | 'esterna';
 export default function GestioneRisorse() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingResource, setEditingResource] = useState<ProjectResource | null>(null);
+  const [resourceIdToDelete, setResourceIdToDelete] = useState<string | null>(null);
   const [selectedProject, setSelectedProject] = useState<string>("");
   // Distinzione tra risorsa dall'anagrafica collaboratori (default) e risorsa
   // "esterna" inserita a mano (es. freelance occasionale, consulente una tantum)
@@ -693,11 +695,7 @@ export default function GestioneRisorse() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => {
-                                    if (confirm("Sei sicuro di voler eliminare questa risorsa?")) {
-                                      deleteResourceMutation.mutate(resource.id);
-                                    }
-                                  }}
+                                  onClick={() => setResourceIdToDelete(resource.id)}
                                 >
                                   <Trash2 className="w-4 h-4 text-red-500" />
                                 </Button>
@@ -798,11 +796,7 @@ export default function GestioneRisorse() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => {
-                                    if (confirm("Sei sicuro di voler eliminare questa risorsa?")) {
-                                      deleteResourceMutation.mutate(resource.id);
-                                    }
-                                  }}
+                                  onClick={() => setResourceIdToDelete(resource.id)}
                                 >
                                   <Trash2 className="w-4 h-4 text-red-500" />
                                 </Button>
@@ -819,6 +813,30 @@ export default function GestioneRisorse() {
           ))}
         </TabsContent>
       </Tabs>
+
+      {/* Conferma eliminazione risorsa */}
+      <AlertDialog open={!!resourceIdToDelete} onOpenChange={(open) => !open && setResourceIdToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eliminare la risorsa?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Questa azione non può essere annullata.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annulla</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (resourceIdToDelete) deleteResourceMutation.mutate(resourceIdToDelete);
+                setResourceIdToDelete(null);
+              }}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              Elimina
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

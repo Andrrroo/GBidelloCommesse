@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -191,12 +191,16 @@ export default function ClientsTable() {
     },
   });
 
-  // Mappa veloce clientName -> numero commesse, calcolata una sola volta
-  // per ciclo di rendering (evita O(n*m) nella funzione di sort/render)
-  const projectsCountByClient = new Map<string, number>();
-  for (const p of allProjects) {
-    projectsCountByClient.set(p.client, (projectsCountByClient.get(p.client) || 0) + 1);
-  }
+  // Mappa veloce clientName -> numero commesse, memoizzata: ricomputata solo
+  // quando cambia `allProjects`. Evita il ricalcolo O(N) a ogni render (es.
+  // ogni volta che l'utente digita nel filtro o ordina la tabella).
+  const projectsCountByClient = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const p of allProjects) {
+      map.set(p.client, (map.get(p.client) || 0) + 1);
+    }
+    return map;
+  }, [allProjects]);
   const getProjectsCount = (c: Client) => projectsCountByClient.get(c.name) || 0;
 
   // Lista città disponibili per il filtro (distinte, non vuote, ordinate alfabeticamente)

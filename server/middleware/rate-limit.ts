@@ -1,23 +1,27 @@
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import type { Request } from 'express';
 
 /**
- * Estrae l'IP del client con fallback robusto.
+ * Estrae l'IP del client con fallback robusto e normalizzazione IPv6.
  *
- * In Vite middleware mode (dev) o dietro proxy, `req.ip` può essere undefined
- * all'arrivo del middleware: il rate limiter allora esplode con
- * ERR_ERL_UNDEFINED_IP_ADDRESS. Qui proviamo in ordine: req.ip (valore di
- * Express), x-forwarded-for (primo hop dietro proxy), socket remoto, e in
- * ultima istanza una chiave statica ("local") cosi' il limiter continua
- * a funzionare senza piantarsi.
+ * Due problemi risolti:
+ *  1) In Vite middleware mode (dev), `req.ip` può essere undefined → il
+ *     rate limiter di default esplode con ERR_ERL_UNDEFINED_IP_ADDRESS.
+ *     Qui il fallback va su x-forwarded-for → socket → 'local'.
+ *  2) IPv6: ogni indirizzo /128 e' unico, quindi un attaccante con un
+ *     prefix /64 potrebbe ruotare tra milioni di IP bypassando il limite.
+ *     `ipKeyGenerator()` normalizza a /56 (block provider tipico) per
+ *     contare tutti gli IP dello stesso prefisso come un solo client.
  */
 function safeKeyGenerator(req: Request): string {
-  if (req.ip) return req.ip;
-  const fwd = req.headers['x-forwarded-for'];
-  if (typeof fwd === 'string' && fwd.length) return fwd.split(',')[0].trim();
-  const remote = req.socket?.remoteAddress;
-  if (remote) return remote;
-  return 'local';
+  const rawIp = req.ip
+    || (typeof req.headers['x-forwarded-for'] === 'string'
+      ? req.headers['x-forwarded-for'].split(',')[0].trim()
+      : undefined)
+    || req.socket?.remoteAddress;
+  if (!rawIp) return 'local';
+  // ipKeyGenerator richiede (ip, ipv6Subnet?). Default ipv6Subnet = 56.
+  return ipKeyGenerator(rawIp);
 }
 
 /**

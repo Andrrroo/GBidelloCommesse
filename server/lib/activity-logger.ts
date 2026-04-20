@@ -64,11 +64,3 @@ export async function logActivity(req: Request, opts: LogActivityOptions): Promi
     });
   }
 }
-
-/**
- * Variante fire-and-forget: utile quando non vogliamo await-are il log
- * dentro una mutation e preferiamo non bloccare la risposta HTTP.
- */
-export function logActivityFAF(req: Request, opts: LogActivityOptions): void {
-  void logActivity(req, opts);
-}

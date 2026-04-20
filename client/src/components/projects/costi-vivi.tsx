@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -50,6 +51,8 @@ export default function CostiVivi({ user }: CostiViviProps) {
   const isAdmin = user?.role === "amministratore";
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingCosto, setEditingCosto] = useState<CostoVivo | null>(null);
+  // Alert dialog di conferma eliminazione (sostituisce window.confirm)
+  const [costoIdToDelete, setCostoIdToDelete] = useState<string | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -176,8 +179,13 @@ export default function CostiVivi({ user }: CostiViviProps) {
   };
 
   const handleDelete = (id: string) => {
-    if (window.confirm("Sei sicuro di voler eliminare questo costo?")) {
-      deleteCostoMutation.mutate(id);
+    setCostoIdToDelete(id);
+  };
+
+  const confirmDelete = () => {
+    if (costoIdToDelete) {
+      deleteCostoMutation.mutate(costoIdToDelete);
+      setCostoIdToDelete(null);
     }
   };
 
@@ -803,6 +811,24 @@ export default function CostiVivi({ user }: CostiViviProps) {
           })}
         </TabsContent>
       </Tabs>
+
+      {/* Dialog di conferma eliminazione costo (sostituisce window.confirm) */}
+      <AlertDialog open={!!costoIdToDelete} onOpenChange={(open) => !open && setCostoIdToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eliminare il costo?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Questa azione non può essere annullata. Il costo verrà rimosso definitivamente.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annulla</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete} className="bg-red-600 hover:bg-red-700">
+              Elimina
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

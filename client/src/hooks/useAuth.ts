@@ -1,8 +1,15 @@
 import { useState, useEffect } from "react";
 import { apiRequest } from "@/lib/queryClient";
+import type { UserRole } from "@shared/schema";
 
-export type UserRole = "amministratore" | "collaboratore";
+// Re-export per retro-compatibilità (tanti componenti fanno `import { UserRole } from '@/hooks/useAuth'`)
+export type { UserRole };
 
+/**
+ * Utente come lo vede il frontend autenticato: sottoinsieme dei campi di
+ * `User` di shared/schema.ts che il server include nella sessione
+ * (GET /api/auth/status). Per la User "completa" del DB vedere shared/schema.
+ */
 export interface User {
   id: string;
   username: string;

@@ -65,7 +65,11 @@ export const queryClient = new QueryClient({
       queryFn: getQueryFn({ on401: "throw" }),
       refetchInterval: false,
       refetchOnWindowFocus: true,
-      staleTime: 30 * 1000,
+      // 5s: compromesso tra freschezza dei dati (fatture/costi/scadenze cambiano
+      // frequentemente quando piu' utenti lavorano in parallelo) e numero di
+      // refetch in background. Le mutation continuano a chiamare invalidateQueries
+      // esplicite per refresh immediato.
+      staleTime: 5 * 1000,
       // Retry intelligente: fino a 2 tentativi SOLO per errori 5xx transitori
       // (tipici del proxy Vite al boot o riavvio server). Per 4xx/client
       // errors non riproviamo — un 401 non deve ciclare infinitamente.
@@ -84,11 +88,23 @@ export const queryClient = new QueryClient({
 });
 
 /**
- * Invalida le query della dashboard (cash-flow, scadenze, pagamenti pendenti).
- * Da chiamare dopo mutazioni finanziarie (fatture, costi, pagamenti) per aggiornare la UI.
+ * Invalida le query globali (dashboard home + viste aggregate nelle altre tab).
+ * Da chiamare dopo mutazioni finanziarie (fatture, costi, pagamenti) perché:
+ *  - cash-flow: saldo aziendale
+ *  - fatture-in-scadenza: widget scadenze
+ *  - pagamenti-collaboratori-pendenti: widget pagamenti
+ *  - /api/projects: `projects-table` mostra fatturato aggregato per commessa
+ *  - /api/fatture-emesse / ingresso / consulenti: tabelle fatture stesse
+ *  - /api/costi-vivi / generali: tabelle costi
  */
 export function invalidateDashboard() {
   queryClient.invalidateQueries({ queryKey: ["/api/cash-flow"] });
   queryClient.invalidateQueries({ queryKey: ["/api/fatture-in-scadenza"] });
   queryClient.invalidateQueries({ queryKey: ["pagamenti-collaboratori-pendenti"] });
+  queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+  queryClient.invalidateQueries({ queryKey: ["/api/fatture-emesse"] });
+  queryClient.invalidateQueries({ queryKey: ["/api/fatture-ingresso"] });
+  queryClient.invalidateQueries({ queryKey: ["/api/fatture-consulenti"] });
+  queryClient.invalidateQueries({ queryKey: ["/api/costi-vivi"] });
+  queryClient.invalidateQueries({ queryKey: ["costi-generali"] });
 }

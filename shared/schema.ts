@@ -240,6 +240,9 @@ export const insertUserSchema = z.object({
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
 
+/** Ruolo utente — unica fonte di verità, importata da client e server. */
+export type UserRole = 'amministratore' | 'collaboratore';
+
 export interface User extends Omit<InsertUser, 'password'> {
   id: string;
   createdAt: string;
@@ -492,4 +495,37 @@ export interface Deadline extends Scadenza {
   completedAt?: string;
   projectCode?: string;
   projectClient?: string;
+}
+
+// ============================================================================
+// Project Summary (risposta di GET /api/projects/:id/summary)
+// ============================================================================
+export interface ProjectSummaryTimelineEvent {
+  data: string;
+  tipo: 'emessa' | 'ingresso' | 'consulente' | 'costo_vivo';
+  importo: number;
+  incassata?: boolean;
+  pagata?: boolean;
+  descrizione?: string;
+}
+
+export interface ProjectSummaryBreakdownItem {
+  name: string;
+  value: number;
+}
+
+export interface ProjectSummary {
+  fattureEmesse: { count: number; totale: number; incassato: number };
+  costi: {
+    fattureIngresso: { count: number; totale: number };
+    fattureConsulenti: { count: number; totale: number };
+    costiVivi: { count: number; totale: number };
+    prestazioni: { count: number; totale: number };
+    totale: number;
+  };
+  margine: number;
+  marginePercentuale: number;
+  timeline: ProjectSummaryTimelineEvent[];
+  entrateBreakdown: ProjectSummaryBreakdownItem[];
+  usciteBreakdown: ProjectSummaryBreakdownItem[];
 }

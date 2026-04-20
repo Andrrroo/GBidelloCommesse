@@ -1,5 +1,6 @@
 import express, { type Request, Response, NextFunction } from 'express';
 import session from 'express-session';
+import helmet from 'helmet';
 import { createServer as createNetServer } from 'net';
 import os from 'os';
 import { router } from './routes/index.js';
@@ -82,6 +83,15 @@ declare module 'express-session' {
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Security headers HTTP (X-Frame-Options, X-Content-Type-Options, HSTS, ecc.).
+// In dev disabilitiamo la CSP perche' Vite inietta script inline per HMR che
+// una CSP strict bloccherebbe. In produzione la CSP di default di helmet e'
+// attiva e restrittiva.
+app.use(helmet({
+  contentSecurityPolicy: isProduction ? undefined : false,
+  crossOriginEmbedderPolicy: false, // evita blocchi su risorse dev (es. font Google)
+}));
 
 // Session configuration
 app.use(session({

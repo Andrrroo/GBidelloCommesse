@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
@@ -120,6 +121,7 @@ export default function GenericInvoiceManager({ config }: GenericInvoiceManagerP
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
+  const [invoiceIdToDelete, setInvoiceIdToDelete] = useState<string | null>(null);
   const [filterProjectId, setFilterProjectId] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [filterEntity, setFilterEntity] = useState<string>("all");
@@ -594,11 +596,7 @@ export default function GenericInvoiceManager({ config }: GenericInvoiceManagerP
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => {
-                                if (confirm("Sei sicuro di voler eliminare questa fattura?")) {
-                                  deleteMutation.mutate(invoice.id);
-                                }
-                              }}
+                              onClick={() => setInvoiceIdToDelete(invoice.id)}
                             >
                               <Trash2 className="h-4 w-4 text-red-500" />
                             </Button>
@@ -881,6 +879,30 @@ export default function GenericInvoiceManager({ config }: GenericInvoiceManagerP
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Conferma eliminazione fattura */}
+      <AlertDialog open={!!invoiceIdToDelete} onOpenChange={(open) => !open && setInvoiceIdToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eliminare la fattura?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Questa azione non può essere annullata.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annulla</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (invoiceIdToDelete) deleteMutation.mutate(invoiceIdToDelete);
+                setInvoiceIdToDelete(null);
+              }}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              Elimina
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -21,6 +22,7 @@ export default function CollaboratoriManagement() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [collabToDelete, setCollabToDelete] = useState<Collaboratore | null>(null);
   const [editing, setEditing] = useState<Collaboratore | null>(null);
   const emptyForm = {
     nome: "",
@@ -185,11 +187,7 @@ export default function CollaboratoriManagement() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => {
-                          if (confirm(`Eliminare il collaboratore ${c.nome} ${c.cognome}?`)) {
-                            deleteMutation.mutate(c.id);
-                          }
-                        }}
+                        onClick={() => setCollabToDelete(c)}
                       >
                         <Trash2 className="h-4 w-4 text-red-500" />
                       </Button>
@@ -323,6 +321,32 @@ export default function CollaboratoriManagement() {
             </form>
           </DialogContent>
         </Dialog>
+
+        {/* Conferma eliminazione collaboratore */}
+        <AlertDialog open={!!collabToDelete} onOpenChange={(open) => !open && setCollabToDelete(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Eliminare il collaboratore?</AlertDialogTitle>
+              <AlertDialogDescription>
+                {collabToDelete && (
+                  <>Stai per eliminare <strong>{collabToDelete.nome} {collabToDelete.cognome}</strong>. L'azione non può essere annullata.</>
+                )}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Annulla</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  if (collabToDelete) deleteMutation.mutate(collabToDelete.id);
+                  setCollabToDelete(null);
+                }}
+                className="bg-red-600 hover:bg-red-700"
+              >
+                Elimina
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </CardContent>
     </Card>
   );

@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
@@ -37,6 +38,7 @@ export default function CostiGenerali() {
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingCosto, setEditingCosto] = useState<CostoGenerale | null>(null);
+  const [costoIdToDelete, setCostoIdToDelete] = useState<string | null>(null);
   const [filterCategoria, setFilterCategoria] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [filterFornitore, setFilterFornitore] = useState<string>("all");
@@ -397,11 +399,7 @@ export default function CostiGenerali() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => {
-                              if (confirm("Sei sicuro di voler eliminare questo costo?")) {
-                                deleteMutation.mutate(costo.id);
-                              }
-                            }}
+                            onClick={() => setCostoIdToDelete(costo.id)}
                           >
                             <Trash2 className="h-4 w-4 text-red-500" />
                           </Button>
@@ -570,6 +568,30 @@ export default function CostiGenerali() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Conferma eliminazione costo */}
+      <AlertDialog open={!!costoIdToDelete} onOpenChange={(open) => !open && setCostoIdToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eliminare il costo?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Questa azione non può essere annullata.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annulla</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (costoIdToDelete) deleteMutation.mutate(costoIdToDelete);
+                setCostoIdToDelete(null);
+              }}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              Elimina
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

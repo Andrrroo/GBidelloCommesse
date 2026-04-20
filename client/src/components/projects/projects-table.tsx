@@ -31,7 +31,7 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { type Project, type ProjectMetadata, type Communication, type Deadline, type FatturaEmessa, CATEGORIE_LAVORO_PROFESSIONALE } from "@shared/schema";
+import { type Project, type ProjectMetadata, type Communication, type Deadline, type FatturaEmessa, type ProjectSummary, CATEGORIE_LAVORO_PROFESSIONALE } from "@shared/schema";
 import EditProjectForm from "./edit-project-form";
 import NewProjectForm from "./new-project-form";
 import PrestazioniModal from "./prestazioni-modal";
@@ -64,7 +64,9 @@ export default function ProjectsTable() {
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
   const [pendingStatusChange, setPendingStatusChange] = useState<{ id: string; status: string } | null>(null);
   const [summaryProject, setSummaryProject] = useState<Project | null>(null);
-  const [summaryData, setSummaryData] = useState<any>(null);
+  // Payload di /api/projects/:id/summary — il server ritorna sempre il
+  // tipo completo (permessi uniformi tra admin e collaboratori).
+  const [summaryData, setSummaryData] = useState<ProjectSummary | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
 
   // Column visibility toggles
