@@ -46,7 +46,14 @@ import {
   Trash2,
   Edit,
   Bell,
-  Calendar as CalendarClock
+  Calendar as CalendarClock,
+  Pin,
+  FileText,
+  Shield,
+  Target,
+  Folder,
+  X,
+  type LucideIcon
 } from "lucide-react";
 import { format, formatDistanceToNow, isPast, isFuture, isToday, addDays } from "date-fns";
 import { it } from "date-fns/locale";
@@ -66,27 +73,29 @@ interface Deadline {
   projectClient?: string;
 }
 
-const PRIORITY_CONFIG = {
-  low: { label: 'Bassa', color: 'bg-gray-100 text-gray-700', icon: '🟢' },
-  medium: { label: 'Media', color: 'bg-blue-100 text-blue-700', icon: '🟡' },
-  high: { label: 'Alta', color: 'bg-orange-100 text-orange-700', icon: '🟠' },
-  urgent: { label: 'Urgente', color: 'bg-red-100 text-red-700', icon: '🔴' }
+const PRIORITY_CONFIG: Record<string, { label: string; color: string; dotColor: string }> = {
+  low:    { label: 'Bassa',   color: 'bg-gray-100 text-gray-700',       dotColor: 'bg-gray-400' },
+  medium: { label: 'Media',   color: 'bg-blue-100 text-blue-700',       dotColor: 'bg-blue-500' },
+  high:   { label: 'Alta',    color: 'bg-orange-100 text-orange-700',   dotColor: 'bg-orange-500' },
+  urgent: { label: 'Urgente', color: 'bg-red-100 text-red-700',         dotColor: 'bg-red-500' },
 };
 
-const TYPE_CONFIG = {
-  general: { label: 'Generale', icon: '📌' },
-  deposito: { label: 'Deposito', icon: '📝' },
-  collaudo: { label: 'Collaudo', icon: '✅' },
-  scadenza_assicurazione: { label: 'Scadenza Assicurazione', icon: '🛡️' },
-  milestone: { label: 'Milestone', icon: '🎯' }
+const TYPE_CONFIG: Record<string, { label: string; icon: LucideIcon }> = {
+  general:                { label: 'Generale',               icon: Pin },
+  deposito:               { label: 'Deposito',               icon: FileText },
+  collaudo:               { label: 'Collaudo',               icon: CheckCircle2 },
+  scadenza_assicurazione: { label: 'Scadenza Assicurazione', icon: Shield },
+  milestone:              { label: 'Milestone',              icon: Target },
 };
 
 function DeadlineForm({
   onSubmit,
+  onCancel,
   initialData,
   projects
 }: {
   onSubmit: (data: any) => void;
+  onCancel?: () => void;
   initialData?: Partial<Deadline>;
   projects: Project[];
 }) {
@@ -165,11 +174,17 @@ function DeadlineForm({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {Object.entries(TYPE_CONFIG).map(([key, config]) => (
-                  <SelectItem key={key} value={key}>
-                    {config.icon} {config.label}
-                  </SelectItem>
-                ))}
+                {Object.entries(TYPE_CONFIG).map(([key, config]) => {
+                  const Icon = config.icon;
+                  return (
+                    <SelectItem key={key} value={key}>
+                      <span className="inline-flex items-center gap-2">
+                        <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+                        {config.label}
+                      </span>
+                    </SelectItem>
+                  );
+                })}
               </SelectContent>
             </Select>
           </div>
@@ -183,7 +198,10 @@ function DeadlineForm({
               <SelectContent>
                 {Object.entries(PRIORITY_CONFIG).map(([key, config]) => (
                   <SelectItem key={key} value={key}>
-                    {config.icon} {config.label}
+                    <span className="inline-flex items-center gap-2">
+                      <span className={`inline-block h-2 w-2 rounded-full ${config.dotColor}`} aria-hidden="true" />
+                      {config.label}
+                    </span>
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -204,7 +222,12 @@ function DeadlineForm({
       </div>
 
       <DialogFooter>
-        <Button type="submit" className="w-full">
+        {onCancel && (
+          <Button type="button" variant="outline" onClick={onCancel}>
+            Annulla
+          </Button>
+        )}
+        <Button type="submit">
           {initialData ? 'Aggiorna Scadenza' : 'Crea Scadenza'}
         </Button>
       </DialogFooter>
@@ -237,11 +260,16 @@ function DeadlineCard({ deadline, onComplete, onDelete, onEdit }: {
           <div className="flex items-start justify-between gap-2">
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-1">
-                <Badge className={priorityConfig.color}>
-                  {priorityConfig.icon} {priorityConfig.label}
+                <Badge className={`${priorityConfig.color} inline-flex items-center gap-1.5`}>
+                  <span className={`inline-block h-2 w-2 rounded-full ${priorityConfig.dotColor}`} aria-hidden="true" />
+                  {priorityConfig.label}
                 </Badge>
-                <Badge variant="outline" className="text-xs">
-                  {typeConfig.icon} {typeConfig.label}
+                <Badge variant="outline" className="text-xs inline-flex items-center gap-1">
+                  {(() => {
+                    const TypeIcon = typeConfig.icon;
+                    return <TypeIcon className="h-3 w-3" aria-hidden="true" />;
+                  })()}
+                  {typeConfig.label}
                 </Badge>
               </div>
               <h4 className="font-semibold text-gray-900 mb-1">{deadline.title}</h4>
@@ -271,8 +299,9 @@ function DeadlineCard({ deadline, onComplete, onDelete, onEdit }: {
           </div>
 
           {deadline.projectCode && (
-            <div className="text-xs text-gray-500">
-              📁 {deadline.projectCode} - {deadline.projectClient}
+            <div className="text-xs text-gray-500 flex items-center gap-1.5">
+              <Folder className="h-3 w-3" aria-hidden="true" />
+              {deadline.projectCode} - {deadline.projectClient}
             </div>
           )}
 
@@ -298,16 +327,18 @@ function DeadlineCard({ deadline, onComplete, onDelete, onEdit }: {
               size="sm"
               variant="ghost"
               onClick={onEdit}
+              aria-label="Modifica scadenza"
             >
-              <Edit className="h-4 w-4" />
+              <Edit className="h-4 w-4" aria-hidden="true" />
             </Button>
             <Button
               size="sm"
               variant="ghost"
               onClick={onDelete}
+              aria-label="Elimina scadenza"
               className="text-red-600 hover:text-red-700 hover:bg-red-50"
             >
-              <Trash2 className="h-4 w-4" />
+              <Trash2 className="h-4 w-4" aria-hidden="true" />
             </Button>
           </div>
         </div>
@@ -485,7 +516,11 @@ export default function Scadenzario() {
                 Aggiungi una nuova scadenza o milestone per una commessa
               </DialogDescription>
             </DialogHeader>
-            <DeadlineForm onSubmit={handleCreate} projects={projects} />
+            <DeadlineForm
+              onSubmit={handleCreate}
+              onCancel={() => setIsDialogOpen(false)}
+              projects={projects}
+            />
           </DialogContent>
         </Dialog>
       </div>
@@ -570,13 +605,48 @@ export default function Scadenzario() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Tutte le priorità</SelectItem>
-                  <SelectItem value="urgent">🔴 Urgente</SelectItem>
-                  <SelectItem value="high">🟠 Alta</SelectItem>
-                  <SelectItem value="medium">🟡 Media</SelectItem>
-                  <SelectItem value="low">🟢 Bassa</SelectItem>
+                  <SelectItem value="urgent">
+                    <span className="inline-flex items-center gap-2">
+                      <span className="inline-block h-2 w-2 rounded-full bg-red-500" aria-hidden="true" />
+                      Urgente
+                    </span>
+                  </SelectItem>
+                  <SelectItem value="high">
+                    <span className="inline-flex items-center gap-2">
+                      <span className="inline-block h-2 w-2 rounded-full bg-orange-500" aria-hidden="true" />
+                      Alta
+                    </span>
+                  </SelectItem>
+                  <SelectItem value="medium">
+                    <span className="inline-flex items-center gap-2">
+                      <span className="inline-block h-2 w-2 rounded-full bg-blue-500" aria-hidden="true" />
+                      Media
+                    </span>
+                  </SelectItem>
+                  <SelectItem value="low">
+                    <span className="inline-flex items-center gap-2">
+                      <span className="inline-block h-2 w-2 rounded-full bg-gray-400" aria-hidden="true" />
+                      Bassa
+                    </span>
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
+
+            {(filterStatus !== 'all' || filterPriority !== 'all') && (
+              <div className="flex items-end">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => { setFilterStatus('all'); setFilterPriority('all'); }}
+                  className="text-gray-500 hover:text-gray-700 gap-1"
+                  data-testid="reset-filters-scadenzario"
+                >
+                  <X className="h-3.5 w-3.5" aria-hidden="true" />
+                  Pulisci filtri
+                </Button>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -614,6 +684,7 @@ export default function Scadenzario() {
             </DialogHeader>
             <DeadlineForm
               onSubmit={handleUpdate}
+              onCancel={() => setEditingDeadline(null)}
               initialData={editingDeadline}
               projects={projects}
             />

@@ -8,7 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Calculator, FileText, Copy, Check } from "lucide-react";
+import { Calculator, FileText, Copy, Check, Ruler, HardHat, CheckCircle2, ClipboardList } from "lucide-react";
 import {
   CATEGORIE_DM143,
   calcolaParcella,
@@ -248,7 +248,10 @@ NETTO A PAGARE: ${formatEuro(risultatoFattura.nettoAPagare)}
                 <div className="space-y-6">
                   {/* Progettazione */}
                   <div>
-                    <h4 className="font-semibold text-sm text-gray-700 mb-3">📐 PROGETTAZIONE</h4>
+                    <h4 className="font-semibold text-sm text-gray-700 mb-3 flex items-center gap-2">
+                      <Ruler className="h-4 w-4 text-gray-500" aria-hidden="true" />
+                      PROGETTAZIONE
+                    </h4>
                     <div className="space-y-2">
                       {[
                         { key: 'rp', label: 'Relazione Paesaggistica' },
@@ -272,7 +275,10 @@ NETTO A PAGARE: ${formatEuro(risultatoFattura.nettoAPagare)}
 
                   {/* Direzione e Coordinamento */}
                   <div>
-                    <h4 className="font-semibold text-sm text-gray-700 mb-3">👷 DIREZIONE E COORDINAMENTO</h4>
+                    <h4 className="font-semibold text-sm text-gray-700 mb-3 flex items-center gap-2">
+                      <HardHat className="h-4 w-4 text-gray-500" aria-hidden="true" />
+                      DIREZIONE E COORDINAMENTO
+                    </h4>
                     <div className="space-y-2">
                       {[
                         { key: 'dl', label: 'Direzione Lavori' },
@@ -297,7 +303,10 @@ NETTO A PAGARE: ${formatEuro(risultatoFattura.nettoAPagare)}
 
                   {/* Collaudi e Verifiche */}
                   <div>
-                    <h4 className="font-semibold text-sm text-gray-700 mb-3">✅ COLLAUDI E VERIFICHE</h4>
+                    <h4 className="font-semibold text-sm text-gray-700 mb-3 flex items-center gap-2">
+                      <CheckCircle2 className="h-4 w-4 text-gray-500" aria-hidden="true" />
+                      COLLAUDI E VERIFICHE
+                    </h4>
                     <div className="space-y-2">
                       {[
                         { key: 'collaudo', label: 'Collaudo Tecnico-Amministrativo' },
@@ -319,7 +328,10 @@ NETTO A PAGARE: ${formatEuro(risultatoFattura.nettoAPagare)}
 
                   {/* Altre Prestazioni */}
                   <div>
-                    <h4 className="font-semibold text-sm text-gray-700 mb-3">📋 ALTRE PRESTAZIONI</h4>
+                    <h4 className="font-semibold text-sm text-gray-700 mb-3 flex items-center gap-2">
+                      <ClipboardList className="h-4 w-4 text-gray-500" aria-hidden="true" />
+                      ALTRE PRESTAZIONI
+                    </h4>
                     <div className="space-y-2">
                       {[
                         { key: 'durc', label: 'Attestazione Rispetto Norme Sicurezza (DURC)' },

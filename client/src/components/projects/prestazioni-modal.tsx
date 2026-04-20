@@ -4,16 +4,33 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { CATEGORIE_DM143 } from "@/lib/parcella-calculator-complete";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { type Project, type ProjectMetadata, type ProjectPrestazioni } from "@shared/schema";
-import { 
-  getAllPrestazioni, 
+import {
+  getAllPrestazioni,
   getAllLivelliProgettazione,
   validatePrestazioniData,
   hasProgettazione,
-  formatImporto 
+  formatImporto
 } from "@/lib/prestazioni-utils";
+import { Loader2, Save } from "lucide-react";
 
 interface PrestazioniModalProps {
   project: Project;
@@ -48,7 +65,7 @@ export default function PrestazioniModal({ project, isOpen, onClose }: Prestazio
         percentualeParcella: metadata?.percentualeParcella,
       });
     }
-  }, [project, isOpen]);
+  }, [project?.id, isOpen]);
 
   // Mutation for saving prestazioni
   const savePrestazioniMutation = useMutation({
@@ -76,25 +93,25 @@ export default function PrestazioniModal({ project, isOpen, onClose }: Prestazio
 
   // Handlers
   const handlePrestazioneChange = (prestazioneId: string, checked: boolean) => {
-    setFormData(prev => ({
+    setFormData((prev: ProjectPrestazioni) => ({
       ...prev,
-      prestazioni: checked 
-        ? [...(prev.prestazioni || []), prestazioneId as any]
-        : (prev.prestazioni || []).filter(p => p !== prestazioneId)
+      prestazioni: checked
+        ? [...(prev.prestazioni || []), prestazioneId]
+        : (prev.prestazioni || []).filter((p: string) => p !== prestazioneId)
     }));
   };
 
   const handleLivelloProgettazioneChange = (livelloId: string, checked: boolean) => {
-    setFormData(prev => ({
+    setFormData((prev: ProjectPrestazioni) => ({
       ...prev,
-      livelloProgettazione: checked 
-        ? [...(prev.livelloProgettazione || []), livelloId as any]
-        : (prev.livelloProgettazione || []).filter(l => l !== livelloId)
+      livelloProgettazione: checked
+        ? [...(prev.livelloProgettazione || []), livelloId]
+        : (prev.livelloProgettazione || []).filter((l: string) => l !== livelloId)
     }));
   };
 
   const handleInputChange = (field: keyof ProjectPrestazioni, value: string | number) => {
-    setFormData(prev => ({
+    setFormData((prev: ProjectPrestazioni) => ({
       ...prev,
       [field]: value === '' ? undefined : value
     }));
@@ -122,37 +139,33 @@ export default function PrestazioniModal({ project, isOpen, onClose }: Prestazio
     onClose();
   };
 
-  if (!isOpen) return null;
-
   const prestazioniList = getAllPrestazioni();
   const livelliProgettazioneList = getAllLivelliProgettazione();
   const showLivelloProgettazione = hasProgettazione(formData.prestazioni);
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" data-testid="prestazioni-modal">
-      <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-        {/* Header */}
-        <div className="flex justify-between items-center p-6 border-b border-gray-200">
-          <div>
-            <h2 className="text-xl font-semibold text-gray-900" data-testid="modal-title">
-              Dettagli Prestazioni Professionali
-            </h2>
-            <p className="text-sm text-gray-600 mt-1">
-              Commessa: <span className="font-mono font-semibold text-primary">{project.code}</span> - {project.object}
-            </p>
-          </div>
-          <Button
-            variant="ghost"
-            onClick={handleClose}
-            disabled={savePrestazioniMutation.isPending}
-            className="text-gray-400 hover:text-gray-600"
-            data-testid="close-modal"
-          >
-            ✕
-          </Button>
-        </div>
+    <Dialog
+      open={isOpen}
+      onOpenChange={(open) => {
+        if (!open && !savePrestazioniMutation.isPending) handleClose();
+      }}
+    >
+      <DialogContent
+        className="max-w-4xl max-h-[90vh] overflow-y-auto"
+        data-testid="prestazioni-modal"
+      >
+        <DialogHeader>
+          <DialogTitle data-testid="modal-title">
+            Dettagli Prestazioni Professionali
+          </DialogTitle>
+          <DialogDescription>
+            Commessa:{" "}
+            <span className="font-mono font-semibold text-primary">{project.code}</span>{" "}
+            — {project.object}
+          </DialogDescription>
+        </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-8">
+        <form onSubmit={handleSubmit} className="space-y-8">
           {/* Sezione Tipologia Prestazioni */}
           <div className="space-y-4">
             <div>
@@ -173,7 +186,7 @@ export default function PrestazioniModal({ project, isOpen, onClose }: Prestazio
                     data-testid={`checkbox-prestazione-${id}`}
                   />
                   <Label htmlFor={`prestazione-${id}`} className="flex items-center gap-2 cursor-pointer flex-1">
-                    <span className="text-lg">{config.icon}</span>
+                    <config.Icon className="h-5 w-5 text-gray-600 shrink-0" aria-hidden="true" />
                     <div>
                       <div className="font-medium">{config.label}</div>
                       <div className="text-xs text-gray-500">{config.description}</div>
@@ -227,19 +240,76 @@ export default function PrestazioniModal({ project, isOpen, onClose }: Prestazio
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="classe-dm" className="text-sm font-medium">
-                  Classe e Categoria
-                </Label>
-                <Input
-                  id="classe-dm"
-                  placeholder="Es: E22, IA03, S05"
-                  value={formData.classeDM143 || ''}
-                  onChange={(e) => handleInputChange('classeDM143', e.target.value)}
-                  className="font-mono"
-                  data-testid="input-classe-dm"
-                />
+                <Label className="text-sm font-medium">Classe e Categoria</Label>
+                {(() => {
+                  // Parsing "IA04" -> { cat: "IA", art: "04" }
+                  // Supporta anche lo stato intermedio "IA" (categoria selezionata,
+                  // articolazione non ancora scelta).
+                  const str = formData.classeDM143 || '';
+                  const fullMatch = str.match(/^([A-Z]{1,2})(\d{2})$/);
+                  const catMatch = fullMatch ?? str.match(/^([A-Z]{1,2})$/);
+                  const selectedCat = catMatch?.[1] ?? '';
+                  const selectedArt = fullMatch?.[2] ?? '';
+                  const catInfo = selectedCat && selectedCat in CATEGORIE_DM143
+                    ? CATEGORIE_DM143[selectedCat as keyof typeof CATEGORIE_DM143]
+                    : null;
+
+                  const setCat = (newCat: string) => {
+                    // Cambio categoria: salva solo il prefisso, articolazione va ri-scelta
+                    handleInputChange('classeDM143', newCat);
+                  };
+
+                  const setArt = (newArt: string) => {
+                    // Richiede categoria già selezionata
+                    if (!selectedCat) return;
+                    handleInputChange('classeDM143', selectedCat + newArt);
+                  };
+
+                  return (
+                    <div className="grid grid-cols-[140px_1fr] gap-2">
+                      <Select value={selectedCat} onValueChange={setCat}>
+                        <SelectTrigger data-testid="select-categoria-dm" aria-label="Categoria DM 143/2013">
+                          <SelectValue placeholder="Categoria" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Object.entries(CATEGORIE_DM143).map(([key, cat]) => (
+                            <SelectItem key={key} value={key}>
+                              <span className="font-mono mr-2">{key}</span>
+                              {cat.nome}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Select
+                        value={selectedArt}
+                        onValueChange={setArt}
+                        disabled={!catInfo}
+                      >
+                        <SelectTrigger
+                          data-testid="select-articolazione-dm"
+                          aria-label="Articolazione"
+                        >
+                          <SelectValue
+                            placeholder={catInfo ? 'Seleziona articolazione…' : 'Prima seleziona la categoria'}
+                          />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {catInfo && Object.entries(catInfo.articolazioni).map(([code, desc]) => (
+                            <SelectItem key={code} value={code}>
+                              <span className="font-mono mr-2">{code}</span>
+                              <span className="text-xs text-gray-600">{desc}</span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  );
+                })()}
                 <p className="text-xs text-gray-500">
                   Codice secondo il Decreto Ministeriale 143/2013
+                  {formData.classeDM143 && /^[A-Z]{1,2}\d{2}$/.test(formData.classeDM143) && (
+                    <> · <span className="font-mono text-gray-700">{formData.classeDM143}</span></>
+                  )}
                 </p>
               </div>
               
@@ -252,7 +322,7 @@ export default function PrestazioniModal({ project, isOpen, onClose }: Prestazio
                   type="number"
                   placeholder="0"
                   min="0"
-                  step="0.01"
+                  step="1000"
                   value={formData.importoOpere || ''}
                   onChange={(e) => handleInputChange('importoOpere', e.target.value === '' ? '' : parseFloat(e.target.value) || '')}
                   data-testid="input-importo-opere"
@@ -271,7 +341,7 @@ export default function PrestazioniModal({ project, isOpen, onClose }: Prestazio
                   type="number"
                   placeholder="0"
                   min="0"
-                  step="0.01"
+                  step="100"
                   value={formData.importoServizio || ''}
                   onChange={(e) => handleInputChange('importoServizio', e.target.value === '' ? '' : parseFloat(e.target.value) || '')}
                   data-testid="input-importo-servizio"
@@ -291,7 +361,7 @@ export default function PrestazioniModal({ project, isOpen, onClose }: Prestazio
                   placeholder="0.00"
                   min="0"
                   max="100"
-                  step="0.01"
+                  step="0.5"
                   value={formData.percentualeParcella || ''}
                   onChange={(e) => handleInputChange('percentualeParcella', e.target.value === '' ? '' : parseFloat(e.target.value) || '')}
                   data-testid="input-percentuale-parcella"
@@ -320,8 +390,7 @@ export default function PrestazioniModal({ project, isOpen, onClose }: Prestazio
             )}
           </div>
 
-          {/* Footer con azioni */}
-          <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
+          <DialogFooter>
             <Button
               type="button"
               variant="outline"
@@ -339,18 +408,19 @@ export default function PrestazioniModal({ project, isOpen, onClose }: Prestazio
             >
               {savePrestazioniMutation.isPending ? (
                 <>
-                  <span className="animate-spin mr-2">🔄</span>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
                   Salvando...
                 </>
               ) : (
                 <>
-                  💾 Salva Classificazione
+                  <Save className="h-4 w-4 mr-2" aria-hidden="true" />
+                  Salva Classificazione
                 </>
               )}
             </Button>
-          </div>
+          </DialogFooter>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

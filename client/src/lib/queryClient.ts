@@ -1,5 +1,23 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
+const DEFAULT_TIMEOUT_MS = 30_000;
+
+async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<Response> {
+  // Combina eventuale AbortSignal esterno con il timeout interno.
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  const externalSignal = init?.signal;
+  if (externalSignal) {
+    if (externalSignal.aborted) ctrl.abort();
+    else externalSignal.addEventListener("abort", () => ctrl.abort(), { once: true });
+  }
+  try {
+    return await fetch(input, { ...init, signal: ctrl.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     const text = (await res.text()) || res.statusText;
@@ -12,7 +30,7 @@ export async function apiRequest(
   url: string,
   data?: unknown | undefined,
 ): Promise<Response> {
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     method,
     headers: data ? { "Content-Type": "application/json" } : {},
     body: data ? JSON.stringify(data) : undefined,
@@ -29,7 +47,7 @@ export const getQueryFn: <T>(options: {
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
-    const res = await fetch(queryKey.join("/") as string, {
+    const res = await fetchWithTimeout(queryKey.join("/") as string, {
       credentials: "include",
     });
 
@@ -46,8 +64,8 @@ export const queryClient = new QueryClient({
     queries: {
       queryFn: getQueryFn({ on401: "throw" }),
       refetchInterval: false,
-      refetchOnWindowFocus: false,
-      staleTime: Infinity,
+      refetchOnWindowFocus: true,
+      staleTime: 30 * 1000,
       retry: false,
     },
     mutations: {
@@ -55,3 +73,13 @@ export const queryClient = new QueryClient({
     },
   },
 });
+
+/**
+ * Invalida le query della dashboard (cash-flow, scadenze, pagamenti pendenti).
+ * Da chiamare dopo mutazioni finanziarie (fatture, costi, pagamenti) per aggiornare la UI.
+ */
+export function invalidateDashboard() {
+  queryClient.invalidateQueries({ queryKey: ["/api/cash-flow"] });
+  queryClient.invalidateQueries({ queryKey: ["/api/fatture-in-scadenza"] });
+  queryClient.invalidateQueries({ queryKey: ["pagamenti-collaboratori-pendenti"] });
+}

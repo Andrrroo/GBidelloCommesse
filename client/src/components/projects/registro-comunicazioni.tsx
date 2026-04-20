@@ -50,7 +50,10 @@ import {
   ArrowUp,
   Plus,
   Search,
-  Filter
+  Filter,
+  Folder,
+  User as UserIcon,
+  X
 } from "lucide-react";
 import { format } from "date-fns";
 import { it } from "date-fns/locale";
@@ -90,12 +93,16 @@ const DIRECTION_CONFIG = {
 
 function CommunicationForm({
   onSubmit,
+  onCancel,
   initialData,
-  projects
+  projects,
+  availableTags,
 }: {
   onSubmit: (data: any) => void;
+  onCancel?: () => void;
   initialData?: Partial<Communication>;
   projects: Project[];
+  availableTags: string[];
 }) {
   const [formData, setFormData] = useState({
     projectId: initialData?.projectId || '',
@@ -144,6 +151,9 @@ function CommunicationForm({
   const handleRemoveTag = (tag: string) => {
     setFormData({ ...formData, tags: formData.tags.filter(t => t !== tag) });
   };
+
+  // Tag esistenti non ancora selezionati nella comunicazione corrente (per autocomplete)
+  const selectableTags = availableTags.filter(t => !formData.tags.includes(t));
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
@@ -256,13 +266,22 @@ function CommunicationForm({
 
       <div className="space-y-2">
         <Label>Tags</Label>
+        {/* Input con autocomplete nativo (datalist): digitando appaiono i tag
+            già presenti in altre comunicazioni; è comunque possibile scriverne
+            uno nuovo e aggiungerlo col bottone. */}
         <div className="flex gap-2">
           <Input
+            list="comunicazione-tags"
             value={newTag}
             onChange={(e) => setNewTag(e.target.value)}
-            placeholder="Aggiungi tag..."
+            placeholder="Seleziona un tag esistente o scrivine uno nuovo…"
             onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddTag())}
           />
+          <datalist id="comunicazione-tags">
+            {selectableTags.map((tag) => (
+              <option key={tag} value={tag} />
+            ))}
+          </datalist>
           <Button type="button" variant="outline" onClick={handleAddTag}>
             Aggiungi
           </Button>
@@ -298,7 +317,12 @@ function CommunicationForm({
       </div>
 
       <DialogFooter>
-        <Button type="submit" className="w-full">
+        {onCancel && (
+          <Button type="button" variant="outline" onClick={onCancel}>
+            Annulla
+          </Button>
+        )}
+        <Button type="submit">
           {initialData ? 'Aggiorna Comunicazione' : 'Registra Comunicazione'}
         </Button>
       </DialogFooter>
@@ -339,8 +363,8 @@ function CommunicationCard({ comm, onEdit, onDelete }: {
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm">
-                  <MoreVertical className="h-4 w-4" />
+                <Button variant="ghost" size="sm" aria-label="Azioni comunicazione">
+                  <MoreVertical className="h-4 w-4" aria-hidden="true" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
@@ -374,8 +398,9 @@ function CommunicationCard({ comm, onEdit, onDelete }: {
           )}
 
           {comm.projectCode && (
-            <div className="text-xs text-gray-500 pt-2 border-t">
-              📁 {comm.projectCode} - {comm.projectClient}
+            <div className="text-xs text-gray-500 pt-2 border-t flex items-center gap-1.5">
+              <Folder className="h-3 w-3" aria-hidden="true" />
+              {comm.projectCode} - {comm.projectClient}
             </div>
           )}
 
@@ -389,8 +414,9 @@ function CommunicationCard({ comm, onEdit, onDelete }: {
               {format(new Date(comm.communicationDate), 'HH:mm')}
             </div>
             {comm.createdBy && (
-              <div className="ml-auto">
-                👤 {comm.createdBy}
+              <div className="ml-auto flex items-center gap-1">
+                <UserIcon className="h-3 w-3" aria-hidden="true" />
+                {comm.createdBy}
               </div>
             )}
           </div>
@@ -409,6 +435,7 @@ export default function RegistroComunicazioni() {
   const [filterType, setFilterType] = useState<string>('all');
   const [filterDirection, setFilterDirection] = useState<string>('all');
   const [filterProject, setFilterProject] = useState<string>('all');
+  const [filterTag, setFilterTag] = useState<string>('all');
   const [showImportantOnly, setShowImportantOnly] = useState(false);
 
   const { data: projects = [] } = useQuery<Project[]>({
@@ -505,6 +532,13 @@ export default function RegistroComunicazioni() {
     deleteMutation.mutate(id);
   };
 
+  // Lista tag distinti presenti nelle comunicazioni (ordinata alfabeticamente)
+  const availableTags = Array.from(
+    new Set(
+      communications.flatMap(c => c.tags ?? []).filter(t => t && t.trim().length > 0)
+    )
+  ).sort((a, b) => a.localeCompare(b, 'it'));
+
   // Filtra comunicazioni
   const filteredComms = communications.filter(c => {
     if (searchTerm && !c.subject.toLowerCase().includes(searchTerm.toLowerCase()) &&
@@ -514,6 +548,7 @@ export default function RegistroComunicazioni() {
     if (filterType !== 'all' && c.type !== filterType) return false;
     if (filterDirection !== 'all' && c.direction !== filterDirection) return false;
     if (filterProject !== 'all' && c.projectId !== filterProject) return false;
+    if (filterTag !== 'all' && !(c.tags ?? []).includes(filterTag)) return false;
     if (showImportantOnly && !c.isImportant) return false;
     return true;
   });
@@ -550,7 +585,12 @@ export default function RegistroComunicazioni() {
                 Aggiungi una comunicazione al registro
               </DialogDescription>
             </DialogHeader>
-            <CommunicationForm onSubmit={handleCreate} projects={projects} />
+            <CommunicationForm
+              onSubmit={handleCreate}
+              onCancel={() => setIsDialogOpen(false)}
+              projects={projects}
+              availableTags={availableTags}
+            />
           </DialogContent>
         </Dialog>
       </div>
@@ -662,18 +702,60 @@ export default function RegistroComunicazioni() {
                   ))}
                 </SelectContent>
               </Select>
+
+              <Select
+                value={filterTag}
+                onValueChange={setFilterTag}
+                disabled={availableTags.length === 0}
+              >
+                <SelectTrigger className="w-[180px]" aria-label="Filtra per tag">
+                  <SelectValue
+                    placeholder={availableTags.length === 0 ? 'Nessun tag' : 'Tag…'}
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tutti i tag</SelectItem>
+                  {availableTags.map((tag) => (
+                    <SelectItem key={tag} value={tag}>
+                      #{tag}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="important-only"
-                checked={showImportantOnly}
-                onCheckedChange={(checked) => setShowImportantOnly(!!checked)}
-              />
-              <label htmlFor="important-only" className="text-sm font-medium flex items-center gap-1">
-                <Star className="h-4 w-4 text-yellow-500" />
-                Solo importanti
-              </label>
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="important-only"
+                  checked={showImportantOnly}
+                  onCheckedChange={(checked) => setShowImportantOnly(!!checked)}
+                />
+                <label htmlFor="important-only" className="text-sm font-medium flex items-center gap-1">
+                  <Star className="h-4 w-4 text-yellow-500" />
+                  Solo importanti
+                </label>
+              </div>
+
+              {(searchTerm !== "" || filterType !== "all" || filterDirection !== "all" || filterProject !== "all" || filterTag !== "all" || showImportantOnly) && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setSearchTerm("");
+                    setFilterType("all");
+                    setFilterDirection("all");
+                    setFilterProject("all");
+                    setFilterTag("all");
+                    setShowImportantOnly(false);
+                  }}
+                  className="text-gray-500 hover:text-gray-700 gap-1"
+                  data-testid="reset-filters-comunicazioni"
+                >
+                  <X className="h-3.5 w-3.5" aria-hidden="true" />
+                  Pulisci filtri
+                </Button>
+              )}
             </div>
           </div>
         </CardContent>
@@ -711,8 +793,10 @@ export default function RegistroComunicazioni() {
             </DialogHeader>
             <CommunicationForm
               onSubmit={handleUpdate}
+              onCancel={() => setEditingComm(null)}
               initialData={editingComm}
               projects={projects}
+              availableTags={availableTags}
             />
           </DialogContent>
         </Dialog>

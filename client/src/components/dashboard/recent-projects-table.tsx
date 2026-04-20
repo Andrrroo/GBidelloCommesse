@@ -1,6 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { type Project } from "@shared/schema";
 import { Button } from "@/components/ui/button";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { EmptyState } from "@/components/ui/empty-state";
+import { FolderOpen } from "lucide-react";
 
 export default function RecentProjectsTable() {
   const { data: projects = [] } = useQuery<Project[]>({
@@ -12,23 +15,6 @@ export default function RecentProjectsTable() {
     .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
     .slice(0, 3);
 
-  const getStatusBadge = (project: Project) => {
-    // Use the actual status from database to match the Gestione tab
-    return (
-      <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-        project.status === 'in_corso'
-          ? 'bg-yellow-100 text-yellow-800'
-          : project.status === 'conclusa'
-          ? 'bg-green-100 text-green-800'
-          : 'bg-red-100 text-red-800'
-      }`}>
-        {project.status === 'in_corso' ? '🟡 In Corso' :
-         project.status === 'conclusa' ? '🟢 Conclusa' :
-         '🔴 Sospesa'}
-      </span>
-    );
-  };
-
   return (
     <div className="card-g2" data-testid="recent-projects-table">
       <div className="flex items-center justify-between mb-6">
@@ -39,11 +25,11 @@ export default function RecentProjectsTable() {
       </div>
       
       {recentProjects.length === 0 ? (
-        <div className="text-center py-8 text-gray-500">
-          <div className="text-4xl mb-2">📁</div>
-          <p>Nessuna commessa presente</p>
-          <p className="text-sm">Crea la prima commessa per iniziare</p>
-        </div>
+        <EmptyState
+          icon={FolderOpen}
+          title="Nessuna commessa presente"
+          description="Crea la prima commessa per iniziare"
+        />
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -72,7 +58,7 @@ export default function RecentProjectsTable() {
                     {project.object}
                   </td>
                   <td className="py-3 px-4" data-testid={`project-status-${project.id}`}>
-                    {getStatusBadge(project)}
+                    <StatusBadge status={project.status} />
                   </td>
                 </tr>
               ))}

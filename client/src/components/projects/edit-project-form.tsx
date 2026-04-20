@@ -9,8 +9,9 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { insertProjectSchema, type Project, type InsertProject } from "@shared/schema";
+import { insertProjectSchema, categoriaLavoroRefinement, CATEGORIE_LAVORO_PROFESSIONALE, type Project, type InsertProject } from "@shared/schema";
 import { TIPO_RAPPORTO_CONFIG, type TipoRapportoType } from "@/lib/prestazioni-utils";
+import { Hammer, Wrench } from "lucide-react";
 
 interface EditProjectFormProps {
   project: Project;
@@ -22,8 +23,15 @@ export default function EditProjectForm({ project, children }: EditProjectFormPr
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
+  // Converte una ISO string "2025-03-15T12:00:00.000Z" in formato "2025-03-15"
+  // per il date picker. Se manca, restituisce stringa vuota.
+  const isoToDateInput = (iso?: string): string => {
+    if (!iso) return "";
+    try { return new Date(iso).toISOString().slice(0, 10); } catch { return ""; }
+  };
+
   const form = useForm<InsertProject>({
-    resolver: zodResolver(insertProjectSchema),
+    resolver: zodResolver(insertProjectSchema.superRefine(categoriaLavoroRefinement)),
     defaultValues: {
       code: project.code,
       client: project.client,
@@ -34,10 +42,13 @@ export default function EditProjectForm({ project, children }: EditProjectFormPr
       status: project.status,
       tipoRapporto: project.tipoRapporto || "diretto",
       tipoIntervento: project.tipoIntervento || "professionale",
+      manutenzione: project.manutenzione ?? false,
+      categoriaLavoro: project.categoriaLavoro || undefined,
       budget: project.budget || undefined,
       committenteFinale: project.committenteFinale || undefined,
       fsRoot: project.fsRoot || undefined,
       metadata: project.metadata || {},
+      createdAt: isoToDateInput(project.createdAt),
     },
   });
 
@@ -65,7 +76,14 @@ export default function EditProjectForm({ project, children }: EditProjectFormPr
   });
 
   const onSubmit = (data: InsertProject) => {
-    updateProjectMutation.mutate(data);
+    // Converte yyyy-mm-dd dal date picker in ISO string per il backend.
+    const payload: Partial<InsertProject> = { ...data };
+    if (payload.createdAt && /^\d{4}-\d{2}-\d{2}$/.test(payload.createdAt)) {
+      payload.createdAt = new Date(payload.createdAt + 'T12:00:00').toISOString();
+    } else if (!payload.createdAt) {
+      delete payload.createdAt;
+    }
+    updateProjectMutation.mutate(payload);
   };
 
   // Reset form when dialog opens
@@ -81,10 +99,13 @@ export default function EditProjectForm({ project, children }: EditProjectFormPr
         status: project.status,
         tipoRapporto: project.tipoRapporto || "diretto",
         tipoIntervento: project.tipoIntervento || "professionale",
+        manutenzione: project.manutenzione ?? false,
+        categoriaLavoro: project.categoriaLavoro || undefined,
         budget: project.budget || undefined,
         committenteFinale: project.committenteFinale || undefined,
         fsRoot: project.fsRoot || undefined,
         metadata: project.metadata || {},
+        createdAt: isoToDateInput(project.createdAt),
       });
     }
   }, [open, project, form]);
@@ -94,12 +115,82 @@ export default function EditProjectForm({ project, children }: EditProjectFormPr
       <DialogTrigger asChild>
         {children}
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-[500px] max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>Modifica Commessa - {project.code}</DialogTitle>
         </DialogHeader>
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 overflow-y-auto overflow-x-hidden px-1 py-1 flex-1">
+            <FormField
+              control={form.control}
+              name="manutenzione"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Tipologia di commessa</FormLabel>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => field.onChange(false)}
+                      className={`p-3 rounded-lg border-2 text-left text-sm transition-all ${
+                        !field.value ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300 bg-white'
+                      }`}
+                    >
+                      <span className="inline-flex items-center gap-2">
+                        <Hammer className="h-4 w-4" aria-hidden="true" />
+                        <span className="font-semibold">Lavoro Professionale</span>
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        field.onChange(true);
+                        form.setValue("categoriaLavoro", undefined);
+                      }}
+                      className={`p-3 rounded-lg border-2 text-left text-sm transition-all ${
+                        field.value ? 'border-orange-500 bg-orange-50' : 'border-gray-200 hover:border-gray-300 bg-white'
+                      }`}
+                    >
+                      <span className="inline-flex items-center gap-2">
+                        <Wrench className="h-4 w-4" aria-hidden="true" />
+                        <span className="font-semibold">Manutenzione</span>
+                      </span>
+                    </button>
+                  </div>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {!form.watch("manutenzione") && (
+              <FormField
+                control={form.control}
+                name="categoriaLavoro"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Categoria *</FormLabel>
+                    <Select
+                      onValueChange={field.onChange}
+                      value={field.value ?? ""}
+                    >
+                      <FormControl>
+                        <SelectTrigger data-testid="edit-categoria-lavoro">
+                          <SelectValue placeholder="Seleziona una categoria..." />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {CATEGORIE_LAVORO_PROFESSIONALE.map((cat) => (
+                          <SelectItem key={cat} value={cat}>
+                            {cat}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
+
             <FormField
               control={form.control}
               name="code"
@@ -158,11 +249,17 @@ export default function EditProjectForm({ project, children }: EditProjectFormPr
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      {Object.entries(TIPO_RAPPORTO_CONFIG).map(([key, config]) => (
-                        <SelectItem key={key} value={key}>
-                          {config.icon} {config.label} - {config.description}
-                        </SelectItem>
-                      ))}
+                      {Object.entries(TIPO_RAPPORTO_CONFIG).map(([key, config]) => {
+                        const Icon = config.Icon;
+                        return (
+                          <SelectItem key={key} value={key}>
+                            <span className="inline-flex items-center gap-2">
+                              <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+                              {config.label} — {config.description}
+                            </span>
+                          </SelectItem>
+                        );
+                      })}
                     </SelectContent>
                   </Select>
                   <FormMessage />
@@ -213,9 +310,9 @@ export default function EditProjectForm({ project, children }: EditProjectFormPr
                     <Input
                       {...field}
                       type="number"
-                      min="0"
-                      max="99"
-                      onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
+                      min="2000"
+                      max="2099"
+                      onChange={(e) => field.onChange(parseInt(e.target.value) || 2025)}
                       data-testid="edit-project-year"
                     />
                   </FormControl>
@@ -223,7 +320,27 @@ export default function EditProjectForm({ project, children }: EditProjectFormPr
                 </FormItem>
               )}
             />
-            
+
+            <FormField
+              control={form.control}
+              name="createdAt"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Data di creazione</FormLabel>
+                  <FormControl>
+                    <Input
+                      {...field}
+                      value={field.value ?? ""}
+                      type="date"
+                      max={new Date().toISOString().slice(0, 10)}
+                      data-testid="edit-project-createdAt"
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
             <FormField
               control={form.control}
               name="template"
@@ -259,8 +376,8 @@ export default function EditProjectForm({ project, children }: EditProjectFormPr
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="professionale">📋 Professionale</SelectItem>
-                      <SelectItem value="realizzativo">🏗️ Realizzativo</SelectItem>
+                      <SelectItem value="professionale">Professionale</SelectItem>
+                      <SelectItem value="realizzativo">Realizzativo</SelectItem>
                     </SelectContent>
                   </Select>
                   <FormMessage />
@@ -274,7 +391,7 @@ export default function EditProjectForm({ project, children }: EditProjectFormPr
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>
-                    Budget Iniziale
+                    Importo Concordato
                     <span className="ml-1 text-xs text-gray-500 font-normal">(opzionale)</span>
                   </FormLabel>
                   <FormControl>
@@ -282,7 +399,7 @@ export default function EditProjectForm({ project, children }: EditProjectFormPr
                       {...field}
                       type="number"
                       min="0"
-                      step="0.01"
+                      step="100"
                       value={field.value || ""}
                       onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)}
                       data-testid="edit-project-budget"
@@ -307,9 +424,9 @@ export default function EditProjectForm({ project, children }: EditProjectFormPr
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="in_corso">🟡 In Corso</SelectItem>
-                      <SelectItem value="conclusa">🟢 Conclusa</SelectItem>
-                      <SelectItem value="sospesa">🔴 Sospesa</SelectItem>
+                      <SelectItem value="in_corso">In Corso</SelectItem>
+                      <SelectItem value="conclusa">Conclusa</SelectItem>
+                      <SelectItem value="sospesa">Sospesa</SelectItem>
                     </SelectContent>
                   </Select>
                   <FormMessage />

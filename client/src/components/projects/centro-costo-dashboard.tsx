@@ -4,8 +4,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { Project } from "@shared/schema";
 import { useState } from "react";
-import { TrendingDown, TrendingUp, AlertCircle, DollarSign, Receipt, Users, CreditCard, Package } from "lucide-react";
+import { TrendingDown, TrendingUp, AlertCircle, AlertTriangle, DollarSign, Receipt, Users, CreditCard, Package } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
+import { formatCurrencyFromCents } from "@/lib/financial-utils";
 
 interface FatturaIngresso {
   id: string;
@@ -35,22 +36,20 @@ interface CostoVivo {
   note?: string;
 }
 
-interface Prestazione {
+interface ProjectResourceLite {
   id: string;
   projectId: string;
-  userId: string;
   userName: string;
-  data: string;
-  oreLavoro: number;
-  costoOrario: number;
-  descrizione: string;
+  oreLavorate: number;
+  orePagate?: number;
+  costoOrario: number; // in centesimi
 }
 
 interface CentrodiCosto {
   project: Project;
   fattureIngresso: FatturaIngresso[];
   costiVivi: CostoVivo[];
-  prestazioni: Prestazione[];
+  resources: ProjectResourceLite[];
   totaleSpeso: number;
   budgetIniziale: number | null;
   percentualeUtilizzata: number;
@@ -76,19 +75,27 @@ export default function CentroCostoDashboard() {
     queryKey: ["/api/costi-vivi"],
   });
 
-  const { data: prestazioni = [] } = useQuery<Prestazione[]>({
-    queryKey: ["/api/prestazioni"],
+  const { data: resources = [] } = useQuery<ProjectResourceLite[]>({
+    queryKey: ["/api/project-resources"],
   });
 
   // Calculate cost centers
+  // Regola di selezione iniziale:
+  //   - 'all'           => solo commesse in corso (default)
+  //   - 'all-inclusive' => tutte le commesse (incluse conclusa/sospesa)
+  //   - <id commessa>   => quella commessa specifica, anche se conclusa
   const centriCosto: CentrodiCosto[] = projects
-    .filter(p => p.status === 'in_corso' || selectedProjectId !== 'all')
+    .filter(p => {
+      if (selectedProjectId === 'all') return p.status === 'in_corso';
+      if (selectedProjectId === 'all-inclusive') return true;
+      return true; // un id specifico: lascio passare, il secondo filter più sotto seleziona
+    })
     .map(project => {
       const fattureProgetto = fattureIngresso.filter(f => f.projectId === project.id);
       const costiViviProgetto = costiVivi.filter(c => c.projectId === project.id);
-      const prestazioniProgetto = prestazioni.filter(p => p.projectId === project.id);
+      const resourcesProgetto = resources.filter(r => r.projectId === project.id);
 
-      // Calcola costi per categoria
+      // Calcola costi per categoria (tutti in centesimi per coerenza con le barre progress)
       const materiali = fattureProgetto
         .filter(f => f.categoria === 'materiali')
         .reduce((sum, f) => sum + f.importo, 0);
@@ -97,12 +104,14 @@ export default function CentroCostoDashboard() {
         .filter(f => f.categoria === 'collaborazione_esterna')
         .reduce((sum, f) => sum + f.importo, 0);
 
-      const costiDiretti = costiVivi.reduce((sum, c) => sum + c.importo, 0) +
+      // Fix bug: usa costiViviProgetto (non costiVivi globale)
+      const costiDiretti = costiViviProgetto.reduce((sum, c) => sum + c.importo, 0) +
         fattureProgetto
           .filter(f => f.categoria === 'costo_vivo')
           .reduce((sum, f) => sum + f.importo, 0);
 
-      const riservaHumana = prestazioniProgetto.reduce((sum, p) => sum + (p.oreLavoro * p.costoOrario * 100), 0);
+      // Risorse Umane: usa ProjectResource (oreLavorate * costoOrario, gia' in centesimi)
+      const riservaHumana = resourcesProgetto.reduce((sum, r) => sum + ((r.oreLavorate || 0) * (r.costoOrario || 0)), 0);
 
       const totaleSpeso = materiali + collaborazioniEsterne + costiDiretti + riservaHumana;
       const budgetIniziale = project.budget || null;
@@ -112,7 +121,7 @@ export default function CentroCostoDashboard() {
         project,
         fattureIngresso: fattureProgetto,
         costiVivi: costiViviProgetto,
-        prestazioni: prestazioniProgetto,
+        resources: resourcesProgetto,
         totaleSpeso,
         budgetIniziale,
         percentualeUtilizzata,
@@ -122,7 +131,7 @@ export default function CentroCostoDashboard() {
         riservaHumana,
       };
     })
-    .filter(cc => selectedProjectId === 'all' || cc.project.id === selectedProjectId)
+    .filter(cc => selectedProjectId === 'all' || selectedProjectId === 'all-inclusive' || cc.project.id === selectedProjectId)
     .sort((a, b) => b.totaleSpeso - a.totaleSpeso);
 
   // Calculate overall statistics
@@ -136,9 +145,7 @@ export default function CentroCostoDashboard() {
   const totaleCostiDiretti = centriCosto.reduce((sum, cc) => sum + cc.costiDiretti, 0);
   const totaleRiservaHumana = centriCosto.reduce((sum, cc) => sum + cc.riservaHumana, 0);
 
-  const formatCurrency = (cents: number) => {
-    return `€ ${(cents / 100).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  };
+  const formatCurrency = formatCurrencyFromCents;
 
   return (
     <div className="space-y-6">
@@ -155,6 +162,7 @@ export default function CentroCostoDashboard() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Tutte le commesse attive</SelectItem>
+              <SelectItem value="all-inclusive">Tutte le commesse (incluse concluse e sospese)</SelectItem>
               {projects.map((project) => (
                 <SelectItem key={project.id} value={project.id}>
                   {project.code} - {project.client}
@@ -199,7 +207,7 @@ export default function CentroCostoDashboard() {
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium text-gray-500 flex items-center gap-2">
               <TrendingUp className="w-4 h-4" />
-              Commesse Attive
+              Commesse
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -292,7 +300,7 @@ export default function CentroCostoDashboard() {
       {/* Projects List */}
       <Tabs defaultValue="active" className="w-full">
         <TabsList>
-          <TabsTrigger value="active">Commesse Attive</TabsTrigger>
+          <TabsTrigger value="active">Commesse</TabsTrigger>
           <TabsTrigger value="over-budget">Oltre Budget</TabsTrigger>
           <TabsTrigger value="near-budget">Vicine al Budget</TabsTrigger>
         </TabsList>
@@ -320,8 +328,9 @@ export default function CentroCostoDashboard() {
                           </span>
                         )}
                         {cc.budgetIniziale && cc.percentualeUtilizzata >= 80 && cc.percentualeUtilizzata <= 100 && (
-                          <span className="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs font-semibold rounded-full">
-                            ⚠️ Vicino al Budget
+                          <span className="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs font-semibold rounded-full inline-flex items-center gap-1">
+                            <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+                            Vicino al Budget
                           </span>
                         )}
                       </div>
@@ -386,7 +395,7 @@ export default function CentroCostoDashboard() {
                         <span>Risorse Umane</span>
                       </div>
                       <p className="text-lg font-semibold text-orange-600">{formatCurrency(cc.riservaHumana)}</p>
-                      <p className="text-xs text-gray-500">{cc.prestazioni.length} prestazioni</p>
+                      <p className="text-xs text-gray-500">{cc.resources.length} risorse</p>
                     </div>
                   </div>
 
@@ -472,8 +481,9 @@ export default function CentroCostoDashboard() {
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
                           <CardTitle>{cc.project.code} - {cc.project.client}</CardTitle>
-                          <span className="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs font-semibold rounded-full">
-                            ⚠️ Vicino al Budget
+                          <span className="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs font-semibold rounded-full inline-flex items-center gap-1">
+                            <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+                            Vicino al Budget
                           </span>
                         </div>
                         <CardDescription>{cc.project.object}</CardDescription>

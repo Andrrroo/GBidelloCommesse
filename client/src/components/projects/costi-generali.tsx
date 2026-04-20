@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,10 +11,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
-import { Plus, Pencil, Trash2, Building, Check, Clock, Euro, Download, RefreshCw } from "lucide-react";
+import { apiRequest, invalidateDashboard } from "@/lib/queryClient";
+import { Plus, Pencil, Trash2, Building, Check, Clock, Euro, Download, ArrowUp, ArrowDown, X } from "lucide-react";
 import type { CostoGenerale } from "@shared/schema";
 import { formatCurrency, formatCurrencyFromCents, formatDate, toCents, fromCents } from "@/lib/financial-utils";
+import { usePagination } from "@/hooks/usePagination";
+import { TablePagination } from "@/components/ui/table-pagination";
 
 const CATEGORIE = {
   noleggio_auto: "Noleggio Auto",
@@ -29,21 +31,17 @@ const CATEGORIE = {
   altro: "Altro"
 };
 
-const PERIODICITA = {
-  mensile: "Mensile",
-  bimestrale: "Bimestrale",
-  trimestrale: "Trimestrale",
-  semestrale: "Semestrale",
-  annuale: "Annuale"
-};
-
 export default function CostiGenerali() {
+  const tableTopRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingCosto, setEditingCosto] = useState<CostoGenerale | null>(null);
   const [filterCategoria, setFilterCategoria] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [filterFornitore, setFilterFornitore] = useState<string>("all");
+  const [sortBy, setSortBy] = useState<'data' | 'importo'>('data');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
 
   const [formData, setFormData] = useState({
     categoria: "altro" as keyof typeof CATEGORIE,
@@ -51,11 +49,9 @@ export default function CostiGenerali() {
     descrizione: "",
     data: new Date().toISOString().split('T')[0],
     dataScadenza: "",
-    importo: 0,
+    importo: "" as string | number,
     pagato: false,
     dataPagamento: "",
-    ricorrente: false,
-    periodicita: "" as keyof typeof PERIODICITA | "",
     allegato: "",
     note: ""
   });
@@ -77,6 +73,7 @@ export default function CostiGenerali() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["costi-generali"] });
+      invalidateDashboard();
       toast({ title: "Successo", description: "Costo creato con successo" });
       resetForm();
     },
@@ -93,6 +90,7 @@ export default function CostiGenerali() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["costi-generali"] });
+      invalidateDashboard();
       toast({ title: "Successo", description: "Costo aggiornato con successo" });
       resetForm();
     },
@@ -108,6 +106,7 @@ export default function CostiGenerali() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["costi-generali"] });
+      invalidateDashboard();
       toast({ title: "Successo", description: "Costo eliminato con successo" });
     },
     onError: () => {
@@ -122,11 +121,9 @@ export default function CostiGenerali() {
       descrizione: "",
       data: new Date().toISOString().split('T')[0],
       dataScadenza: "",
-      importo: 0,
+      importo: "",
       pagato: false,
       dataPagamento: "",
-      ricorrente: false,
-      periodicita: "",
       allegato: "",
       note: ""
     });
@@ -145,8 +142,6 @@ export default function CostiGenerali() {
       importo: costo.importo,
       pagato: costo.pagato,
       dataPagamento: costo.dataPagamento || "",
-      ricorrente: costo.ricorrente,
-      periodicita: costo.periodicita || "",
       allegato: costo.allegato || "",
       note: costo.note || ""
     });
@@ -155,10 +150,20 @@ export default function CostiGenerali() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const cleanData: Record<string, any> = {
+      ...formData,
+      importo: parseFloat(String(formData.importo)) || 0,
+    };
+    // Rimuovi campi vuoti per evitare errori di validazione Zod sugli enum opzionali
+    if (!cleanData.dataScadenza) delete cleanData.dataScadenza;
+    if (!cleanData.dataPagamento) delete cleanData.dataPagamento;
+    if (!cleanData.allegato) delete cleanData.allegato;
+    if (!cleanData.note) delete cleanData.note;
+    const submitData = cleanData;
     if (editingCosto) {
-      updateMutation.mutate({ id: editingCosto.id, data: formData });
+      updateMutation.mutate({ id: editingCosto.id, data: submitData as any });
     } else {
-      createMutation.mutate(formData);
+      createMutation.mutate(submitData as any);
     }
   };
 
@@ -173,11 +178,44 @@ export default function CostiGenerali() {
     });
   };
 
+  // Lista fornitori disponibili per il filtro (distinti, non vuoti, alfabetico)
+  const availableFornitori = Array.from(
+    new Set(costi.map(c => c.fornitore?.trim()).filter((v): v is string => !!v && v.length > 0))
+  ).sort((a, b) => a.localeCompare(b, 'it'));
+
   const filteredCosti = costi.filter(c => {
     if (filterCategoria !== "all" && c.categoria !== filterCategoria) return false;
+    if (filterFornitore !== "all" && (c.fornitore || '').trim() !== filterFornitore) return false;
     if (filterStatus === "pagati" && !c.pagato) return false;
     if (filterStatus === "da_pagare" && c.pagato) return false;
     return true;
+  });
+
+  // Ordinamento configurabile. Default: data decrescente (più recenti in alto),
+  // coerente con l'uso tipico (ultime spese registrate prima).
+  const sortedCosti = [...filteredCosti].sort((a, b) => {
+    let cmp = 0;
+    switch (sortBy) {
+      case 'data':
+        cmp = new Date(a.data).getTime() - new Date(b.data).getTime();
+        break;
+      case 'importo':
+        cmp = a.importo - b.importo;
+        break;
+    }
+    // Tie-break stabile sulla data (più recente prima) quando il criterio primario è equivalente
+    if (cmp === 0 && sortBy !== 'data') {
+      cmp = new Date(a.data).getTime() - new Date(b.data).getTime();
+    }
+    return sortDirection === 'asc' ? cmp : -cmp;
+  });
+
+  const toggleSortDirection = () => setSortDirection(d => d === 'asc' ? 'desc' : 'asc');
+
+  const pagination = usePagination<CostoGenerale>({
+    data: sortedCosti,
+    pageSize: 25,
+    resetKey: `${filterCategoria}|${filterFornitore}|${filterStatus}|${sortBy}|${sortDirection}`,
   });
 
   const totaleCosti = filteredCosti.reduce((acc, c) => acc + c.importo, 0);
@@ -186,7 +224,7 @@ export default function CostiGenerali() {
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row justify-between gap-4">
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 items-center">
           <Select value={filterCategoria} onValueChange={setFilterCategoria}>
             <SelectTrigger className="w-[180px]">
               <SelectValue placeholder="Tutte le categorie" />
@@ -195,6 +233,21 @@ export default function CostiGenerali() {
               <SelectItem value="all">Tutte le categorie</SelectItem>
               {Object.entries(CATEGORIE).map(([key, label]) => (
                 <SelectItem key={key} value={key}>{label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select
+            value={filterFornitore}
+            onValueChange={setFilterFornitore}
+            disabled={availableFornitori.length === 0}
+          >
+            <SelectTrigger className="w-[200px]" aria-label="Filtra per fornitore">
+              <SelectValue placeholder="Tutti i fornitori" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Tutti i fornitori</SelectItem>
+              {availableFornitori.map(f => (
+                <SelectItem key={f} value={f}>{f}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -208,6 +261,42 @@ export default function CostiGenerali() {
               <SelectItem value="da_pagare">Da pagare</SelectItem>
             </SelectContent>
           </Select>
+          <Select value={sortBy} onValueChange={(v) => setSortBy(v as typeof sortBy)}>
+            <SelectTrigger className="w-[180px]" aria-label="Criterio di ordinamento">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="data">Ordina per: Data</SelectItem>
+              <SelectItem value="importo">Ordina per: Importo</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={toggleSortDirection}
+            aria-label={sortDirection === 'asc' ? 'Ordine crescente' : 'Ordine decrescente'}
+            title={sortDirection === 'asc' ? 'Ordine crescente' : 'Ordine decrescente'}
+          >
+            {sortDirection === 'asc'
+              ? <ArrowUp className="h-4 w-4" aria-hidden="true" />
+              : <ArrowDown className="h-4 w-4" aria-hidden="true" />}
+          </Button>
+          {(filterCategoria !== "all" || filterFornitore !== "all" || filterStatus !== "all") && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setFilterCategoria("all");
+                setFilterFornitore("all");
+                setFilterStatus("all");
+              }}
+              className="text-gray-500 hover:text-gray-700 gap-1"
+              data-testid="reset-filters-costi-generali"
+            >
+              <X className="h-3.5 w-3.5" aria-hidden="true" />
+              Pulisci filtri
+            </Button>
+          )}
         </div>
         <Button onClick={() => setIsDialogOpen(true)}>
           <Plus className="h-4 w-4 mr-1" />
@@ -249,13 +338,13 @@ export default function CostiGenerali() {
         <CardContent className="p-0">
           {isLoading ? (
             <div className="p-4 animate-pulse space-y-2">
-              <div className="h-10 bg-gray-200 rounded"></div>
-              <div className="h-10 bg-gray-200 rounded"></div>
+              <div className="h-10 bg-gray-200 rounded-md"></div>
+              <div className="h-10 bg-gray-200 rounded-md"></div>
             </div>
           ) : filteredCosti.length === 0 ? (
             <p className="text-center text-gray-500 py-8">Nessun costo generale registrato</p>
           ) : (
-            <div className="overflow-x-auto">
+            <div ref={tableTopRef} className="overflow-x-auto scroll-mt-24">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -270,14 +359,11 @@ export default function CostiGenerali() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredCosti.map((costo) => (
+                  {pagination.pageItems.map((costo) => (
                     <TableRow key={costo.id}>
                       <TableCell>
                         <div className="flex items-center gap-1">
                           {CATEGORIE[costo.categoria]}
-                          {costo.ricorrente && (
-                            <RefreshCw className="h-3 w-3 text-blue-500" />
-                          )}
                         </div>
                       </TableCell>
                       <TableCell>{costo.fornitore}</TableCell>
@@ -325,6 +411,7 @@ export default function CostiGenerali() {
                   ))}
                 </TableBody>
               </Table>
+              <TablePagination pagination={pagination} scrollTopRef={tableTopRef} />
             </div>
           )}
         </CardContent>
@@ -360,10 +447,20 @@ export default function CostiGenerali() {
                 <Label htmlFor="fornitore">Fornitore *</Label>
                 <Input
                   id="fornitore"
+                  list="fornitori-costi-generali"
                   value={formData.fornitore}
                   onChange={(e) => setFormData(prev => ({ ...prev, fornitore: e.target.value }))}
+                  placeholder="Inizia a scrivere o scegli uno già usato..."
+                  autoComplete="off"
                   required
                 />
+                {/* Autocomplete nativo: elenco fornitori già presenti nei costi
+                    generali. L'utente può comunque digitarne uno nuovo. */}
+                <datalist id="fornitori-costi-generali">
+                  {Array.from(new Set(costi.map(c => c.fornitore?.trim()).filter(Boolean)))
+                    .sort((a, b) => (a as string).localeCompare(b as string, 'it'))
+                    .map(f => <option key={f} value={f} />)}
+                </datalist>
               </div>
             </div>
 
@@ -407,47 +504,20 @@ export default function CostiGenerali() {
                 <Input
                   id="importo"
                   type="number"
-                  step="0.01"
+                  step="10"
                   className="pl-9"
                   value={formData.importo}
-                  onChange={(e) => setFormData(prev => ({ ...prev, importo: parseFloat(e.target.value) || 0 }))}
+                  onChange={(e) => setFormData(prev => ({ ...prev, importo: e.target.value }))}
                   required
                 />
               </div>
             </div>
 
-            <div className="flex items-center justify-between">
-              <Label htmlFor="ricorrente">Costo Ricorrente</Label>
-              <Switch
-                id="ricorrente"
-                checked={formData.ricorrente}
-                onCheckedChange={(checked) => setFormData(prev => ({ ...prev, ricorrente: checked }))}
-              />
-            </div>
-
-            {formData.ricorrente && (
-              <div className="space-y-2">
-                <Label htmlFor="periodicita">Periodicità</Label>
-                <Select
-                  value={formData.periodicita}
-                  onValueChange={(value) => setFormData(prev => ({ ...prev, periodicita: value as keyof typeof PERIODICITA }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Seleziona periodicità" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(PERIODICITA).map(([key, label]) => (
-                      <SelectItem key={key} value={key}>{label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-
-            <div className="flex items-center justify-between">
-              <Label htmlFor="pagato">Pagato</Label>
+            <div className="flex items-center justify-between p-3 rounded-lg border border-gray-200 bg-gray-50">
+              <Label htmlFor="pagato" className="font-medium cursor-pointer">Pagato</Label>
               <Switch
                 id="pagato"
+                className="data-[state=checked]:bg-green-600 data-[state=unchecked]:bg-gray-300"
                 checked={formData.pagato}
                 onCheckedChange={(checked) => setFormData(prev => ({
                   ...prev,

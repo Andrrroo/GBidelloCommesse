@@ -22,6 +22,12 @@ export const formatDate = (dateStr: string): string => {
   return new Date(dateStr).toLocaleDateString('it-IT');
 };
 
+// Formato corto gg/mm per widget compatti
+export const formatDateShort = (dateStr: string): string => {
+  if (!dateStr) return '';
+  return new Date(dateStr).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' });
+};
+
 // Formattazione data completa
 export const formatDateLong = (dateStr: string): string => {
   if (!dateStr) return '';

@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { User, UserRole } from "@/hooks/useAuth";
+import { User, UserRole, useAuth } from "@/hooks/useAuth";
 import { UserPlus, Users, Shield, Edit, Trash2, Key } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 
@@ -27,6 +27,7 @@ export default function UsersManagement() {
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user: currentUser } = useAuth();
 
   const [formData, setFormData] = useState<UserFormData>({
     username: "",
@@ -376,12 +377,15 @@ export default function UsersManagement() {
                           >
                             <Edit className="w-4 h-4" />
                           </Button>
+                          {/* Un admin non può eliminare il proprio account:
+                              si bloccherebbe fuori dal sistema. */}
                           <Button
                             variant="ghost"
                             size="sm"
                             onClick={() => setUserToDelete(user)}
-                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                            title="Elimina"
+                            disabled={user.id === currentUser?.id}
+                            className="text-red-600 hover:text-red-700 hover:bg-red-50 disabled:text-gray-300 disabled:cursor-not-allowed"
+                            title={user.id === currentUser?.id ? "Non puoi eliminare il tuo account" : "Elimina"}
                           >
                             <Trash2 className="w-4 h-4" />
                           </Button>

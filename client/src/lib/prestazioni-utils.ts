@@ -1,10 +1,23 @@
 import type { ProjectPrestazioni } from "@shared/schema";
+import {
+  Ruler, HardHat, Shield, BarChart3, CheckCircle2, Scale, ClipboardList,
+  Hammer, RefreshCw, Handshake, Users, Settings, Link2,
+  type LucideIcon,
+} from "lucide-react";
 
 // Configurazione prestazioni professionali
-export const PRESTAZIONI_CONFIG = {
+export type PrestazioneKey = 'progettazione' | 'dl' | 'csp' | 'cse' | 'contabilita' | 'collaudo' | 'perizia' | 'pratiche';
+export const PRESTAZIONI_CONFIG: Record<PrestazioneKey, {
+  id: string;
+  Icon: LucideIcon;
+  label: string;
+  shortLabel: string;
+  className: string;
+  description: string;
+}> = {
   progettazione: {
     id: 'progettazione',
-    icon: '📐',
+    Icon: Ruler,
     label: 'Progettazione',
     shortLabel: 'Prog.',
     className: 'bg-blue-100 text-blue-800 border-blue-200',
@@ -12,7 +25,7 @@ export const PRESTAZIONI_CONFIG = {
   },
   dl: {
     id: 'dl',
-    icon: '👷',
+    Icon: HardHat,
     label: 'Direzione Lavori',
     shortLabel: 'DL',
     className: 'bg-purple-100 text-purple-800 border-purple-200',
@@ -20,7 +33,7 @@ export const PRESTAZIONI_CONFIG = {
   },
   csp: {
     id: 'csp',
-    icon: '🛡️',
+    Icon: Shield,
     label: 'CSP',
     shortLabel: 'CSP',
     className: 'bg-orange-100 text-orange-800 border-orange-200',
@@ -28,7 +41,7 @@ export const PRESTAZIONI_CONFIG = {
   },
   cse: {
     id: 'cse',
-    icon: '🛡️',
+    Icon: Shield,
     label: 'CSE',
     shortLabel: 'CSE',
     className: 'bg-orange-100 text-orange-800 border-orange-200',
@@ -36,7 +49,7 @@ export const PRESTAZIONI_CONFIG = {
   },
   contabilita: {
     id: 'contabilita',
-    icon: '📊',
+    Icon: BarChart3,
     label: 'Contabilità Lavori',
     shortLabel: 'Cont.',
     className: 'bg-cyan-100 text-cyan-800 border-cyan-200',
@@ -44,7 +57,7 @@ export const PRESTAZIONI_CONFIG = {
   },
   collaudo: {
     id: 'collaudo',
-    icon: '✅',
+    Icon: CheckCircle2,
     label: 'Collaudo',
     shortLabel: 'Coll.',
     className: 'bg-green-100 text-green-800 border-green-200',
@@ -52,7 +65,7 @@ export const PRESTAZIONI_CONFIG = {
   },
   perizia: {
     id: 'perizia',
-    icon: '⚖️',
+    Icon: Scale,
     label: 'Perizia',
     shortLabel: 'Per.',
     className: 'bg-pink-100 text-pink-800 border-pink-200',
@@ -60,23 +73,31 @@ export const PRESTAZIONI_CONFIG = {
   },
   pratiche: {
     id: 'pratiche',
-    icon: '📋',
+    Icon: ClipboardList,
     label: 'Pratiche',
     shortLabel: 'Prat.',
     className: 'bg-indigo-100 text-indigo-800 border-indigo-200',
     description: 'Pratiche strutturali ed edilizie'
   }
-} as const;
+};
 
 // Configurazione livelli progettazione
-export const LIVELLO_PROGETTAZIONE_CONFIG = {
+export type LivelloProgettazioneKey = 'pfte' | 'definitivo' | 'esecutivo' | 'variante';
+export const LIVELLO_PROGETTAZIONE_CONFIG: Record<LivelloProgettazioneKey, {
+  id: string;
+  label: string;
+  fullLabel: string;
+  description: string;
+  className: string;
+  Icon: LucideIcon;
+}> = {
   pfte: {
     id: 'pfte',
     label: 'PFTE',
     fullLabel: 'Progetto di Fattibilità Tecnico-Economica',
     description: 'Progetto di Fattibilità Tecnico-Economica',
     className: 'bg-blue-50 text-blue-700 border-blue-200',
-    icon: '📋'
+    Icon: ClipboardList,
   },
   definitivo: {
     id: 'definitivo',
@@ -84,7 +105,7 @@ export const LIVELLO_PROGETTAZIONE_CONFIG = {
     fullLabel: 'Progetto Definitivo',
     description: 'Progetto definitivo',
     className: 'bg-orange-50 text-orange-700 border-orange-200',
-    icon: '📐'
+    Icon: Ruler,
   },
   esecutivo: {
     id: 'esecutivo',
@@ -92,7 +113,7 @@ export const LIVELLO_PROGETTAZIONE_CONFIG = {
     fullLabel: 'Progetto Esecutivo',
     description: 'Progetto esecutivo',
     className: 'bg-green-50 text-green-700 border-green-200',
-    icon: '🏗️'
+    Icon: Hammer,
   },
   variante: {
     id: 'variante',
@@ -100,9 +121,9 @@ export const LIVELLO_PROGETTAZIONE_CONFIG = {
     fullLabel: 'Variante in corso d\'opera',
     description: 'Variante in corso d\'opera',
     className: 'bg-purple-50 text-purple-700 border-purple-200',
-    icon: '🔄'
-  }
-} as const;
+    Icon: RefreshCw,
+  },
+};
 
 // Tipi per autocomplete e type safety
 export type PrestazioneType = keyof typeof PRESTAZIONI_CONFIG;
@@ -110,7 +131,8 @@ export type LivelloProgettazioneType = keyof typeof LIVELLO_PROGETTAZIONE_CONFIG
 
 // Funzione per formattare importi in euro
 export function formatImporto(amount?: number | null): string {
-  if (!amount || amount === 0) return 'Forfait';
+  if (amount === undefined || amount === null) return '€ 0';
+  if (amount === 0) return '€ 0';
   
   return new Intl.NumberFormat('it-IT', {
     style: 'currency',
@@ -136,24 +158,24 @@ export function validateClasseDM143(classe?: string): boolean {
 
 // Funzione per renderizzare badge prestazioni
 export function renderPrestazioneBadge(
-  prestazione: PrestazioneType, 
+  prestazione: PrestazioneType,
   size: 'sm' | 'md' = 'sm'
 ): {
-  icon: string;
+  Icon: LucideIcon;
   label: string;
   className: string;
   fullLabel: string;
 } {
   const config = PRESTAZIONI_CONFIG[prestazione];
-  const sizeClass = size === 'sm' 
-    ? 'px-2 py-1 text-xs' 
+  const sizeClass = size === 'sm'
+    ? 'px-2 py-1 text-xs'
     : 'px-3 py-1.5 text-sm';
-    
+
   return {
-    icon: config.icon,
+    Icon: config.Icon,
     label: config.shortLabel,
     className: `inline-flex items-center gap-1 rounded-full font-medium border ${config.className} ${sizeClass}`,
-    fullLabel: config.label
+    fullLabel: config.label,
   };
 }
 
@@ -229,13 +251,13 @@ export function validatePrestazioniData(data: ProjectPrestazioni): {
   };
 }
 
-// Funzioni helper per il rendering delle colonne
+// Funzioni helper per il rendering delle colonne (solo testo)
 export function renderPrestazioniColumn(prestazioni?: string[]): string[] {
   if (!prestazioni || prestazioni.length === 0) return [];
-  
+
   return prestazioni.map(p => {
     const config = PRESTAZIONI_CONFIG[p as PrestazioneType];
-    return config ? `${config.icon} ${config.shortLabel}` : p;
+    return config ? config.shortLabel : p;
   });
 }
 
@@ -253,33 +275,33 @@ export function renderClasseDMColumn(classe?: string, importoOpere?: number): {
 
 // Funzione per renderizzare badge livelli progettazione
 export function renderLivelloProgettazioneBadge(
-  livello: LivelloProgettazioneType, 
+  livello: LivelloProgettazioneType,
   size: 'sm' | 'md' = 'sm'
 ): {
-  icon: string;
+  Icon: LucideIcon;
   label: string;
   className: string;
   fullLabel: string;
 } {
   const config = LIVELLO_PROGETTAZIONE_CONFIG[livello];
-  const sizeClass = size === 'sm' 
-    ? 'px-2 py-1 text-xs' 
+  const sizeClass = size === 'sm'
+    ? 'px-2 py-1 text-xs'
     : 'px-3 py-1.5 text-sm';
-    
+
   return {
-    icon: config.icon,
+    Icon: config.Icon,
     label: config.label,
     className: `inline-flex items-center gap-1 rounded-full font-medium border ${config.className} ${sizeClass}`,
-    fullLabel: config.fullLabel
+    fullLabel: config.fullLabel,
   };
 }
 
 // Funzione per renderizzare colonna livelli progettazione
 export function renderLivelliProgettazioneColumn(
-  prestazioni?: string[], 
+  prestazioni?: string[],
   livelloProgettazione?: string[]
 ): Array<{
-  icon: string;
+  Icon: LucideIcon;
   label: string;
   className: string;
   fullLabel: string;
@@ -288,72 +310,79 @@ export function renderLivelliProgettazioneColumn(
   if (!hasProgettazione(prestazioni) || !livelloProgettazione || livelloProgettazione.length === 0) {
     return [];
   }
-  
-  return livelloProgettazione.map(livello => 
+
+  return livelloProgettazione.map(livello =>
     renderLivelloProgettazioneBadge(livello as LivelloProgettazioneType)
   );
 }
 
 // Configurazione tipi rapporto committenza
-export const TIPO_RAPPORTO_CONFIG = {
+export type TipoRapportoKey = 'diretto' | 'consulenza' | 'subappalto' | 'ati' | 'partnership';
+export const TIPO_RAPPORTO_CONFIG: Record<TipoRapportoKey, {
+  id: string;
+  label: string;
+  description: string;
+  className: string;
+  Icon: LucideIcon;
+}> = {
   diretto: {
     id: 'diretto',
     label: 'Diretto',
     description: 'Incarico diretto con il committente',
     className: 'bg-blue-50 text-blue-700 border-blue-200',
-    icon: '🤝'
+    Icon: Handshake,
   },
   consulenza: {
     id: 'consulenza',
     label: 'Consulenza',
     description: 'Consulenza per altro professionista',
     className: 'bg-purple-50 text-purple-700 border-purple-200',
-    icon: '👥'
+    Icon: Users,
   },
   subappalto: {
     id: 'subappalto',
     label: 'Subappalto',
     description: 'Subappalto da altro professionista',
     className: 'bg-orange-50 text-orange-700 border-orange-200',
-    icon: '⚙️'
+    Icon: Settings,
   },
   ati: {
     id: 'ati',
     label: 'ATI',
     description: 'Associazione Temporanea di Imprese',
     className: 'bg-green-50 text-green-700 border-green-200',
-    icon: '🤝'
+    Icon: Handshake,
   },
   partnership: {
     id: 'partnership',
     label: 'Partnership',
     description: 'Partnership con altro professionista',
     className: 'bg-cyan-50 text-cyan-700 border-cyan-200',
-    icon: '🔗'
-  }
-} as const;
+    Icon: Link2,
+  },
+};
 
 export type TipoRapportoType = keyof typeof TIPO_RAPPORTO_CONFIG;
 
 // Funzione per renderizzare badge tipo rapporto
 export function renderTipoRapportoBadge(
-  tipo: TipoRapportoType, 
+  tipo: TipoRapportoType,
   size: 'sm' | 'md' = 'sm'
 ): {
-  icon: string;
+  Icon: LucideIcon;
   label: string;
   className: string;
   description: string;
 } {
   const config = TIPO_RAPPORTO_CONFIG[tipo];
-  const sizeClass = size === 'sm' 
-    ? 'px-2 py-1 text-xs' 
+  const sizeClass = size === 'sm'
+    ? 'px-2 py-1 text-xs'
     : 'px-3 py-1.5 text-sm';
-    
+
   return {
-    icon: config.icon,
+    Icon: config.Icon,
     label: config.label,
     className: `inline-flex items-center gap-1 rounded-full font-medium border ${config.className} ${sizeClass}`,
-    description: config.description
+    description: config.description,
   };
 }

@@ -9,6 +9,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Loader2, Shield } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import { useDocumentTitle } from "@/hooks/useDocumentTitle";
 
 const loginSchema = z.object({
   username: z.string().min(1, "Username è obbligatorio"),
@@ -24,6 +25,7 @@ interface LoginPageProps {
 }
 
 export function LoginPage({ onLoginSuccess }: LoginPageProps) {
+  useDocumentTitle("Accedi");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -65,7 +67,7 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
               <Shield className="h-8 w-8 text-blue-600 dark:text-blue-400" />
             </div>
           </div>
-          <CardTitle className="text-2xl font-bold">Gbidello Engineering & Partners</CardTitle>
+          <CardTitle className="text-2xl font-bold">GB Engineering</CardTitle>
           <CardDescription>
             Accedi al sistema di gestione commesse
           </CardDescription>

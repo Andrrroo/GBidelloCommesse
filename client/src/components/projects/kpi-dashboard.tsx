@@ -87,7 +87,7 @@ export default function KpiDashboard() {
     ).reduce((sum, r) => sum + (r.oreLavorate * r.costoOrario), 0) || 0,
 
     // Clienti
-    totaleClienti: new Set(filteredProjects.map(p => p.clientId).filter(Boolean)).size,
+    totaleClienti: new Set(filteredProjects.map(p => p.client).filter(Boolean)).size,
   };
 
   // Marginalità
@@ -176,18 +176,30 @@ export default function KpiDashboard() {
               <SelectItem value="year">Anno</SelectItem>
             </SelectContent>
           </Select>
-          {selectedPeriod === "year" && (
-            <Select value={selectedYear} onValueChange={setSelectedYear}>
-              <SelectTrigger className="w-28">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i).map(year => (
-                  <SelectItem key={year} value={year.toString()}>{year}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
+          {selectedPeriod === "year" && (() => {
+            // Range anni disponibili:
+            //   max = anno corrente (non permettiamo di selezionare anni futuri)
+            //   min = il più basso tra 2025 (baseline app) e l'anno della commessa più vecchia
+            const currentYear = new Date().getFullYear();
+            const oldestProjectYear = (projects ?? [])
+              .map(p => p.createdAt ? new Date(p.createdAt).getFullYear() : currentYear)
+              .reduce((min, y) => Math.min(min, y), currentYear);
+            const minYear = Math.min(2025, oldestProjectYear);
+            const years: number[] = [];
+            for (let y = currentYear; y >= minYear; y--) years.push(y);
+            return (
+              <Select value={selectedYear} onValueChange={setSelectedYear}>
+                <SelectTrigger className="w-28">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {years.map(year => (
+                    <SelectItem key={year} value={year.toString()}>{year}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            );
+          })()}
         </div>
       </div>
 
@@ -310,7 +322,32 @@ export default function KpiDashboard() {
         <TabsContent value="trend">
           <Card>
             <CardHeader>
-              <CardTitle>Trend Mensile Nuove Commesse - {selectedYear}</CardTitle>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <CardTitle>Trend Mensile Nuove Commesse</CardTitle>
+                {(() => {
+                  // Stessa logica del range anni del selector in alto: max = anno
+                  // corrente, min = min(2025, anno commessa più vecchia).
+                  const currentYear = new Date().getFullYear();
+                  const oldestProjectYear = (projects ?? [])
+                    .map(p => p.createdAt ? new Date(p.createdAt).getFullYear() : currentYear)
+                    .reduce((min, y) => Math.min(min, y), currentYear);
+                  const minYear = Math.min(2025, oldestProjectYear);
+                  const years: number[] = [];
+                  for (let y = currentYear; y >= minYear; y--) years.push(y);
+                  return (
+                    <Select value={selectedYear} onValueChange={setSelectedYear}>
+                      <SelectTrigger className="w-28" aria-label="Anno del trend mensile">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {years.map(year => (
+                          <SelectItem key={year} value={year.toString()}>{year}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  );
+                })()}
+              </div>
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={350}>
@@ -440,13 +477,15 @@ export default function KpiDashboard() {
           </CardHeader>
           <CardContent className="space-y-2">
             {parseFloat(marginePercentuale) < 20 && (
-              <p className="text-sm text-orange-700">
-                ⚠️ Marginalità bassa ({marginePercentuale}%). Considerare ottimizzazione costi o revisione compensi.
+              <p className="text-sm text-orange-700 flex items-start gap-2">
+                <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" aria-hidden="true" />
+                <span>Marginalità bassa ({marginePercentuale}%). Considerare ottimizzazione costi o revisione compensi.</span>
               </p>
             )}
             {parseFloat(efficienzaOre) > 100 && (
-              <p className="text-sm text-orange-700">
-                ⚠️ Ore lavorate superiori alle ore assegnate ({efficienzaOre}%). Verific budget ore progetti.
+              <p className="text-sm text-orange-700 flex items-start gap-2">
+                <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" aria-hidden="true" />
+                <span>Ore lavorate superiori alle ore assegnate ({efficienzaOre}%). Verifica budget ore progetti.</span>
               </p>
             )}
           </CardContent>

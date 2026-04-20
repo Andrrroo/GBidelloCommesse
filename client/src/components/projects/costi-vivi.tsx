@@ -13,7 +13,7 @@ import { apiRequest } from "@/lib/queryClient";
 import type { Project } from "@shared/schema";
 import { format, parseISO } from "date-fns";
 import { it } from "date-fns/locale";
-import { Trash2, Plus, Edit2, Car, CreditCard, Home, Coffee, MapPin, Route } from "lucide-react";
+import { Trash2, Plus, Edit2, Car, CreditCard, Home, Coffee, MapPin, Route, Target, ArrowUp, ArrowDown, X } from "lucide-react";
 import { User } from "@/hooks/useAuth";
 
 interface CostoVivo {
@@ -46,17 +46,18 @@ const TIPOLOGIE_COSTO = [
   { value: 'altro', label: 'Altro', icon: <CreditCard className="w-4 h-4" />, color: 'bg-gray-100 text-gray-700' },
 ];
 
-// Helper per verificare se l'utente è admin
-const isUserAdmin = (user: User | null | undefined) => {
-  return user?.role === "admin" || user?.role === "amministratore" as any;
-};
-
 export default function CostiVivi({ user }: CostiViviProps) {
-  const isAdmin = isUserAdmin(user);
+  const isAdmin = user?.role === "amministratore";
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingCosto, setEditingCosto] = useState<CostoVivo | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  // Filtri e ordinamento (pattern coerente con costi-generali e fatture)
+  const [filterProjectId, setFilterProjectId] = useState<string>('all');
+  const [filterTipologia, setFilterTipologia] = useState<string>('all');
+  const [sortBy, setSortBy] = useState<'data' | 'importo'>('data');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
 
   // Form state
   const [formData, setFormData] = useState({
@@ -196,10 +197,36 @@ export default function CostiVivi({ user }: CostiViviProps) {
     });
   };
 
-  // Filtra i costi: admin vede tutto, operativo solo i propri
-  const filteredCostiVivi = isAdmin
+  // Filtro base per permessi: admin vede tutto, operativo solo i propri
+  const visibleCostiVivi = isAdmin
     ? costiVivi
     : costiVivi.filter(c => c.userId === user?.id);
+
+  // Filtri utente (applicati sopra quello permessi)
+  const filteredCostiVivi = visibleCostiVivi.filter(c => {
+    if (filterProjectId !== 'all' && c.projectId !== filterProjectId) return false;
+    if (filterTipologia !== 'all' && c.tipologia !== filterTipologia) return false;
+    return true;
+  });
+
+  // Ordinamento configurabile. Default: data decrescente (più recenti in alto).
+  const sortedCostiVivi = [...filteredCostiVivi].sort((a, b) => {
+    let cmp = 0;
+    switch (sortBy) {
+      case 'data':
+        cmp = new Date(a.data).getTime() - new Date(b.data).getTime();
+        break;
+      case 'importo':
+        cmp = a.importo - b.importo;
+        break;
+    }
+    if (cmp === 0 && sortBy !== 'data') {
+      cmp = new Date(a.data).getTime() - new Date(b.data).getTime();
+    }
+    return sortDirection === 'asc' ? cmp : -cmp;
+  });
+
+  const toggleSortDirection = () => setSortDirection(d => d === 'asc' ? 'desc' : 'asc');
 
   // Calculate statistics sui costi filtrati
   const totaleSpese = filteredCostiVivi.reduce((sum, costo) => sum + costo.importo, 0);
@@ -317,7 +344,7 @@ export default function CostiVivi({ user }: CostiViviProps) {
                   <Input
                     id="importo"
                     type="number"
-                    step="0.01"
+                    step="10"
                     min="0"
                     value={formData.importo}
                     onChange={(e) => setFormData({ ...formData, importo: e.target.value })}
@@ -407,6 +434,74 @@ export default function CostiVivi({ user }: CostiViviProps) {
         </Dialog>
       </div>
 
+      {/* Filtri + Ordinamento */}
+      <div className="flex gap-3 flex-wrap items-center">
+        <Select value={filterProjectId} onValueChange={setFilterProjectId}>
+          <SelectTrigger className="w-[200px]" aria-label="Filtra per commessa">
+            <SelectValue placeholder="Tutte le commesse" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Tutte le commesse</SelectItem>
+            {projects.map(p => (
+              <SelectItem key={p.id} value={p.id}>{p.code}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select value={filterTipologia} onValueChange={setFilterTipologia}>
+          <SelectTrigger className="w-[180px]" aria-label="Filtra per tipologia">
+            <SelectValue placeholder="Tutte le tipologie" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Tutte le tipologie</SelectItem>
+            {TIPOLOGIE_COSTO.map(tipo => (
+              <SelectItem key={tipo.value} value={tipo.value}>
+                <span className="inline-flex items-center gap-2">
+                  {tipo.icon}
+                  {tipo.label}
+                </span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <div className="flex items-center gap-2">
+          <Select value={sortBy} onValueChange={(v) => setSortBy(v as typeof sortBy)}>
+            <SelectTrigger className="w-[200px]" aria-label="Criterio di ordinamento">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="data">Ordina per: Data</SelectItem>
+              <SelectItem value="importo">Ordina per: Importo</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={toggleSortDirection}
+            aria-label={sortDirection === 'asc' ? 'Ordine crescente' : 'Ordine decrescente'}
+            title={sortDirection === 'asc' ? 'Ordine crescente' : 'Ordine decrescente'}
+          >
+            {sortDirection === 'asc'
+              ? <ArrowUp className="h-4 w-4" aria-hidden="true" />
+              : <ArrowDown className="h-4 w-4" aria-hidden="true" />}
+          </Button>
+        </div>
+
+        {(filterProjectId !== 'all' || filterTipologia !== 'all') && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => { setFilterProjectId('all'); setFilterTipologia('all'); }}
+            className="text-gray-500 hover:text-gray-700 gap-1"
+            data-testid="reset-filters-costi-vivi"
+          >
+            <X className="h-3.5 w-3.5" aria-hidden="true" />
+            Pulisci filtri
+          </Button>
+        )}
+      </div>
+
       {/* Statistics Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
@@ -457,8 +552,7 @@ export default function CostiVivi({ user }: CostiViviProps) {
             </Card>
           ) : (
             <div className="space-y-3">
-              {filteredCostiVivi
-                .sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime())
+              {sortedCostiVivi
                 .map((costo) => {
                   const tipologiaConfig = getTipologiaConfig(costo.tipologia);
                   return (
@@ -478,9 +572,24 @@ export default function CostiVivi({ user }: CostiViviProps) {
                             <h3 className="font-semibold text-gray-900 mb-1">{costo.descrizione}</h3>
                             <p className="text-sm text-gray-600 mb-2">{getProjectName(costo.projectId)}</p>
                             <div className="flex flex-wrap gap-3 text-sm text-gray-500">
-                              {costo.luogo && <span>📍 {costo.luogo}</span>}
-                              {costo.destinazione && <span>🎯 {costo.destinazione}</span>}
-                              {costo.km && <span>🛣️ {costo.km} km</span>}
+                              {costo.luogo && (
+                                <span className="inline-flex items-center gap-1">
+                                  <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
+                                  {costo.luogo}
+                                </span>
+                              )}
+                              {costo.destinazione && (
+                                <span className="inline-flex items-center gap-1">
+                                  <Target className="h-3.5 w-3.5" aria-hidden="true" />
+                                  {costo.destinazione}
+                                </span>
+                              )}
+                              {costo.km && (
+                                <span className="inline-flex items-center gap-1">
+                                  <Route className="h-3.5 w-3.5" aria-hidden="true" />
+                                  {costo.km} km
+                                </span>
+                              )}
                             </div>
                             {costo.note && (
                               <p className="text-sm text-gray-500 mt-2 italic">{costo.note}</p>
@@ -552,7 +661,7 @@ export default function CostiVivi({ user }: CostiViviProps) {
                         return (
                           <div key={costo.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
                             <div className="flex items-center gap-3 flex-1">
-                              <span className={`px-2 py-1 rounded text-xs font-medium flex items-center gap-1 ${tipologiaConfig.color}`}>
+                              <span className={`px-2 py-1 rounded-md text-xs font-medium flex items-center gap-1 ${tipologiaConfig.color}`}>
                                 {tipologiaConfig.icon}
                                 {tipologiaConfig.label}
                               </span>
@@ -560,8 +669,18 @@ export default function CostiVivi({ user }: CostiViviProps) {
                                 <p className="font-medium text-gray-900">{costo.descrizione}</p>
                                 <div className="flex gap-3 text-xs text-gray-500 mt-1">
                                   <span>{format(parseISO(costo.data), 'dd MMM yyyy', { locale: it })}</span>
-                                  {costo.luogo && <span>📍 {costo.luogo}</span>}
-                                  {costo.km && <span>🛣️ {costo.km} km</span>}
+                                  {costo.luogo && (
+                                    <span className="inline-flex items-center gap-1">
+                                      <MapPin className="h-3 w-3" aria-hidden="true" />
+                                      {costo.luogo}
+                                    </span>
+                                  )}
+                                  {costo.km && (
+                                    <span className="inline-flex items-center gap-1">
+                                      <Route className="h-3 w-3" aria-hidden="true" />
+                                      {costo.km} km
+                                    </span>
+                                  )}
                                 </div>
                               </div>
                             </div>
@@ -596,7 +715,13 @@ export default function CostiVivi({ user }: CostiViviProps) {
 
         {/* By Type Tab */}
         <TabsContent value="by-type" className="space-y-4">
-          {TIPOLOGIE_COSTO.map((tipo) => {
+          {filteredCostiVivi.length === 0 ? (
+            <Card>
+              <CardContent className="pt-6">
+                <p className="text-center text-gray-500">Nessun costo vivo registrato</p>
+              </CardContent>
+            </Card>
+          ) : TIPOLOGIE_COSTO.map((tipo) => {
             const costiTipo = filteredCostiVivi.filter(c => c.tipologia === tipo.value);
             const totaleTipo = costiTipo.reduce((sum, c) => sum + c.importo, 0);
 
@@ -630,8 +755,24 @@ export default function CostiVivi({ user }: CostiViviProps) {
                               <span>{getProjectName(costo.projectId)}</span>
                               <span>•</span>
                               <span>{format(parseISO(costo.data), 'dd MMM yyyy', { locale: it })}</span>
-                              {costo.luogo && <><span>•</span><span>📍 {costo.luogo}</span></>}
-                              {costo.km && <><span>•</span><span>🛣️ {costo.km} km</span></>}
+                              {costo.luogo && (
+                                <>
+                                  <span>•</span>
+                                  <span className="inline-flex items-center gap-1">
+                                    <MapPin className="h-3 w-3" aria-hidden="true" />
+                                    {costo.luogo}
+                                  </span>
+                                </>
+                              )}
+                              {costo.km && (
+                                <>
+                                  <span>•</span>
+                                  <span className="inline-flex items-center gap-1">
+                                    <Route className="h-3 w-3" aria-hidden="true" />
+                                    {costo.km} km
+                                  </span>
+                                </>
+                              )}
                             </div>
                           </div>
                           <div className="flex items-center gap-2">

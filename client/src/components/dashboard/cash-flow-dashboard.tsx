@@ -1,7 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { apiRequest } from "@/lib/queryClient";
+import { formatCurrency } from "@/lib/financial-utils";
 import {
   TrendingUp,
   TrendingDown,
@@ -41,18 +43,18 @@ interface CashFlowDashboardProps {
 }
 
 export default function CashFlowDashboard({ isAdmin = false }: CashFlowDashboardProps) {
+  // Endpoint admin-only: evita fetch 403 per i collaboratori e nasconde la card.
   const { data: cashFlow, isLoading } = useQuery<CashFlowData>({
     queryKey: ["cash-flow"],
     queryFn: async () => {
       const response = await apiRequest("GET", "/api/cash-flow");
       if (!response.ok) throw new Error("Failed to fetch");
       return response.json();
-    }
+    },
+    enabled: isAdmin,
   });
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(amount);
-  };
+  if (!isAdmin) return null;
 
   if (isLoading) {
     return (
@@ -64,11 +66,11 @@ export default function CashFlowDashboard({ isAdmin = false }: CashFlowDashboard
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="animate-pulse space-y-4">
-            <div className="h-20 bg-gray-200 rounded"></div>
+          <div className="space-y-4">
+            <Skeleton className="h-20 w-full" />
             <div className="grid grid-cols-2 gap-4">
-              <div className="h-24 bg-gray-200 rounded"></div>
-              <div className="h-24 bg-gray-200 rounded"></div>
+              <Skeleton className="h-24 w-full" />
+              <Skeleton className="h-24 w-full" />
             </div>
           </div>
         </CardContent>
@@ -188,9 +190,11 @@ export default function CashFlowDashboard({ isAdmin = false }: CashFlowDashboard
               </div>
               <div className="flex justify-between text-sm">
                 <span>Totale: {formatCurrency(cashFlow.uscite.dettaglio.fattureIngresso.totale)}</span>
-                <span className="text-red-600">
-                  -{formatCurrency(cashFlow.uscite.dettaglio.fattureIngresso.daPagare)}
-                </span>
+                {cashFlow.uscite.dettaglio.fattureIngresso.daPagare > 0 && (
+                  <span className="text-red-600">
+                    -{formatCurrency(cashFlow.uscite.dettaglio.fattureIngresso.daPagare)}
+                  </span>
+                )}
               </div>
             </div>
 
@@ -203,9 +207,11 @@ export default function CashFlowDashboard({ isAdmin = false }: CashFlowDashboard
                 </div>
                 <div className="flex justify-between text-sm">
                   <span>Totale: {formatCurrency(cashFlow.uscite.dettaglio.fattureConsulenti.totale)}</span>
-                  <span className="text-red-600">
-                    -{formatCurrency(cashFlow.uscite.dettaglio.fattureConsulenti.daPagare)}
-                  </span>
+                  {cashFlow.uscite.dettaglio.fattureConsulenti.daPagare > 0 && (
+                    <span className="text-red-600">
+                      -{formatCurrency(cashFlow.uscite.dettaglio.fattureConsulenti.daPagare)}
+                    </span>
+                  )}
                 </div>
               </div>
             )}
@@ -230,9 +236,11 @@ export default function CashFlowDashboard({ isAdmin = false }: CashFlowDashboard
                 </div>
                 <div className="flex justify-between text-sm">
                   <span>Totale: {formatCurrency(cashFlow.uscite.dettaglio.costiGenerali.totale)}</span>
-                  <span className="text-red-600">
-                    -{formatCurrency(cashFlow.uscite.dettaglio.costiGenerali.daPagare)}
-                  </span>
+                  {cashFlow.uscite.dettaglio.costiGenerali.daPagare > 0 && (
+                    <span className="text-red-600">
+                      -{formatCurrency(cashFlow.uscite.dettaglio.costiGenerali.daPagare)}
+                    </span>
+                  )}
                 </div>
               </div>
             )}

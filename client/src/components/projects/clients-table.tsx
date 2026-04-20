@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -22,17 +22,35 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { type Client, type Project, insertClientSchema } from "@shared/schema";
+import { Plus, ArrowUp, ArrowDown, Search, Users, Loader2, Pencil, Trash2, ClipboardList, AlertTriangle, X } from "lucide-react";
+import { usePagination } from "@/hooks/usePagination";
+import { TablePagination } from "@/components/ui/table-pagination";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
+// Tipi di ordinamento supportati dalla tabella clienti
+type SortBy = 'name' | 'sigla' | 'city' | 'projectsCount';
+type SortDirection = 'asc' | 'desc';
+
+const SORT_OPTIONS: { value: SortBy; label: string }[] = [
+  { value: 'name',           label: 'Nome cliente' },
+  { value: 'sigla',          label: 'Sigla' },
+  { value: 'city',           label: 'Citt\u00e0' },
+  { value: 'projectsCount',  label: 'N. commesse' },
+];
 
 // Schema per form cliente (sia inserimento che modifica)
 const clientFormSchema = z.object({
   sigla: z.string().min(1, "La sigla è obbligatoria").max(10, "Sigla troppo lunga (max 10 caratteri)"),
   name: z.string().min(1, "Il nome è obbligatorio"),
+  codiceInterno: z.string().max(50, "Massimo 50 caratteri").optional().or(z.literal("")),
   address: z.string().optional(),
   city: z.string().optional(),
   cap: z.string().optional(),
   province: z.string().max(2, "Usa il codice provincia (2 lettere)").optional(),
+  paese: z.string().max(60, "Massimo 60 caratteri").optional().or(z.literal("")),
   piva: z.string().optional(),
   cf: z.string().optional(),
+  codiceSdi: z.string().max(7, "Massimo 7 caratteri").regex(/^[A-Za-z0-9]*$/, "Solo lettere e numeri").optional().or(z.literal("")),
   email: z.string().email("Email non valida").optional().or(z.literal("")),
   pec: z.string().email("PEC non valida").optional().or(z.literal("")),
   phone: z.string().optional(),
@@ -42,7 +60,11 @@ const clientFormSchema = z.object({
 type ClientFormData = z.infer<typeof clientFormSchema>;
 
 export default function ClientsTable() {
+  const tableTopRef = useRef<HTMLDivElement>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [cityFilter, setCityFilter] = useState<string>("all");
+  const [sortBy, setSortBy] = useState<SortBy>('name');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
   const [selectedClientProjects, setSelectedClientProjects] = useState<Project[] | null>(null);
   const [showProjectsModal, setShowProjectsModal] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
@@ -65,12 +87,15 @@ export default function ClientsTable() {
   const defaultFormValues: ClientFormData = {
     sigla: "",
     name: "",
+    codiceInterno: "",
     address: "",
     city: "",
     cap: "",
     province: "",
+    paese: "Italia",
     piva: "",
     cf: "",
+    codiceSdi: "",
     email: "",
     pec: "",
     phone: "",
@@ -166,15 +191,90 @@ export default function ClientsTable() {
     },
   });
 
-  const filteredClients = clients.filter(client =>
-    client.sigla.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    client.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (client.city && client.city.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  // Mappa veloce clientName -> numero commesse, calcolata una sola volta
+  // per ciclo di rendering (evita O(n*m) nella funzione di sort/render)
+  const projectsCountByClient = new Map<string, number>();
+  for (const p of allProjects) {
+    projectsCountByClient.set(p.client, (projectsCountByClient.get(p.client) || 0) + 1);
+  }
+  const getProjectsCount = (c: Client) => projectsCountByClient.get(c.name) || 0;
+
+  // Lista città disponibili per il filtro (distinte, non vuote, ordinate alfabeticamente)
+  const availableCities = Array.from(
+    new Set(
+      clients
+        .map(c => c.city?.trim())
+        .filter((v): v is string => !!v && v.length > 0)
+    )
+  ).sort((a, b) => a.localeCompare(b, 'it'));
+
+  // Filtering: ricerca testuale + filtro città
+  const filteredClients = clients.filter(client => {
+    // Filtro città
+    if (cityFilter !== 'all') {
+      if ((client.city || '').trim() !== cityFilter) return false;
+    }
+    // Ricerca testuale su più campi
+    if (searchTerm) {
+      const q = searchTerm.toLowerCase();
+      const matches =
+        client.sigla.toLowerCase().includes(q) ||
+        client.name.toLowerCase().includes(q) ||
+        (client.city && client.city.toLowerCase().includes(q)) ||
+        (client.codiceInterno && client.codiceInterno.toLowerCase().includes(q)) ||
+        (client.codiceSdi && client.codiceSdi.toLowerCase().includes(q));
+      if (!matches) return false;
+    }
+    return true;
+  });
+
+  // Sorting: confronto condizionato al tipo di campo. localeCompare('it')
+  // per alfabetico italiano (gestisce corretamente accenti e maiuscole),
+  // compare numerico per projectsCount.
+  const sortedClients = [...filteredClients].sort((a, b) => {
+    let cmp = 0;
+    switch (sortBy) {
+      case 'name':
+        cmp = a.name.localeCompare(b.name, 'it', { sensitivity: 'base' });
+        break;
+      case 'sigla':
+        cmp = a.sigla.localeCompare(b.sigla, 'it', { sensitivity: 'base' });
+        break;
+      case 'city': {
+        const ca = (a.city || '').trim();
+        const cb = (b.city || '').trim();
+        // I clienti senza città finiscono sempre in fondo (indipendentemente da asc/desc)
+        if (!ca && cb) return 1;
+        if (ca && !cb) return -1;
+        if (!ca && !cb) { cmp = a.name.localeCompare(b.name, 'it'); break; }
+        cmp = ca.localeCompare(cb, 'it', { sensitivity: 'base' });
+        break;
+      }
+      case 'projectsCount':
+        cmp = getProjectsCount(a) - getProjectsCount(b);
+        break;
+    }
+    // Tie-break stabile sul nome quando il criterio primario è equivalente
+    if (cmp === 0 && sortBy !== 'name') {
+      cmp = a.name.localeCompare(b.name, 'it', { sensitivity: 'base' });
+    }
+    return sortDirection === 'asc' ? cmp : -cmp;
+  });
+
+  // Paginazione: reset a pagina 1 quando cambia qualsiasi filtro o ordinamento
+  const pagination = usePagination<Client>({
+    data: sortedClients,
+    pageSize: 25,
+    resetKey: `${searchTerm}|${cityFilter}|${sortBy}|${sortDirection}`,
+  });
+
+  const toggleSortDirection = () => {
+    setSortDirection(d => (d === 'asc' ? 'desc' : 'asc'));
+  };
 
   // Handle view client projects
   const handleViewProjects = (client: Client) => {
-    const clientProjects = allProjects.filter(project => project.client === client.sigla);
+    const clientProjects = allProjects.filter(project => project.client === client.name);
     setSelectedClientProjects(clientProjects);
     setShowProjectsModal(true);
   };
@@ -196,12 +296,15 @@ export default function ClientsTable() {
     editForm.reset({
       sigla: client.sigla,
       name: client.name,
+      codiceInterno: client.codiceInterno || "",
       address: client.address || "",
       city: client.city || "",
       cap: client.cap || "",
       province: client.province || "",
+      paese: client.paese || "Italia",
       piva: client.piva || "",
       cf: client.cf || "",
+      codiceSdi: client.codiceSdi || "",
       email: client.email || "",
       pec: client.pec || "",
       phone: client.phone || "",
@@ -222,7 +325,7 @@ export default function ClientsTable() {
 
   // Handle delete client
   const handleDeleteClient = async (client: Client) => {
-    const clientProjectsCount = allProjects.filter(project => project.client === client.sigla).length;
+    const clientProjectsCount = allProjects.filter(project => project.client === client.name).length;
 
     if (clientProjectsCount > 0) {
       toast({
@@ -265,57 +368,129 @@ export default function ClientsTable() {
     );
   }
 
+  const currentSortLabel = SORT_OPTIONS.find(o => o.value === sortBy)?.label ?? '';
+  const sortDirectionTitle = sortDirection === 'asc'
+    ? `Ordine crescente per ${currentSortLabel.toLowerCase()}`
+    : `Ordine decrescente per ${currentSortLabel.toLowerCase()}`;
+
   return (
     <div data-testid="clients-table">
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-3 mb-6">
         <h3 className="text-lg font-semibold text-gray-900">Anagrafica Clienti</h3>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3 items-center">
           <div className="relative">
             <Input
               placeholder="Cerca clienti..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+              className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent w-full sm:w-64"
               data-testid="search-clients"
             />
-            <span className="absolute left-3 top-2.5 text-gray-400 text-lg">🔍</span>
+            <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" aria-hidden="true" />
           </div>
+
+          {/* Filtro per città */}
+          <Select value={cityFilter} onValueChange={setCityFilter}>
+            <SelectTrigger className="w-44" data-testid="filter-city" aria-label="Filtra per città">
+              <SelectValue placeholder="Tutte le città" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Tutte le città</SelectItem>
+              {availableCities.map(city => (
+                <SelectItem key={city} value={city}>{city}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* Selettore criterio di ordinamento */}
+          <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortBy)}>
+            <SelectTrigger className="w-52" data-testid="sort-by" aria-label="Criterio di ordinamento">
+              <SelectValue placeholder="Ordina per" />
+            </SelectTrigger>
+            <SelectContent>
+              {SORT_OPTIONS.map(opt => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  Ordina per: {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* Toggle direzione crescente/decrescente */}
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={toggleSortDirection}
+            aria-label={sortDirectionTitle}
+            title={sortDirectionTitle}
+            data-testid="sort-direction-toggle"
+          >
+            {sortDirection === 'asc' ? (
+              <ArrowUp className="h-4 w-4" aria-hidden="true" />
+            ) : (
+              <ArrowDown className="h-4 w-4" aria-hidden="true" />
+            )}
+          </Button>
+
+          {(searchTerm !== "" || cityFilter !== "all") && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => { setSearchTerm(""); setCityFilter("all"); }}
+              className="text-gray-500 hover:text-gray-700 gap-1"
+              data-testid="reset-filters-clients"
+            >
+              <X className="h-3.5 w-3.5" aria-hidden="true" />
+              Pulisci filtri
+            </Button>
+          )}
+
           <Button
             className="button-g2-primary"
             onClick={handleNewClient}
             disabled={createClientMutation.isPending}
             data-testid="add-client"
           >
-            {createClientMutation.isPending ? "Creando..." : "➕ Nuovo Cliente"}
+            {createClientMutation.isPending ? (
+              "Creando..."
+            ) : (
+              <>
+                <Plus className="h-4 w-4 mr-1" />
+                Nuovo Cliente
+              </>
+            )}
           </Button>
         </div>
       </div>
       
       {filteredClients.length === 0 ? (
         <div className="text-center py-12 text-gray-500">
-          <div className="text-4xl mb-2">👥</div>
+          <Users className="h-12 w-12 mx-auto mb-2 text-gray-400" aria-hidden="true" />
           <p className="text-lg font-medium">
-            {searchTerm ? "Nessun cliente trovato" : "Nessun cliente presente"}
+            {searchTerm || cityFilter !== 'all' ? "Nessun cliente trovato" : "Nessun cliente presente"}
           </p>
           <p className="text-sm">
-            {searchTerm ? "Prova a modificare i criteri di ricerca" : "I clienti vengono creati automaticamente dalle commesse"}
+            {searchTerm || cityFilter !== 'all'
+              ? "Prova a modificare i criteri di ricerca o rimuovi il filtro città"
+              : "I clienti vengono creati automaticamente dalle commesse"}
           </p>
         </div>
       ) : (
         <>
-          <div className="overflow-x-auto">
+          <div ref={tableTopRef} className="overflow-x-auto scroll-mt-24">
             <table className="w-full">
               <thead className="bg-gray-50">
                 <tr>
                   <th className="text-left py-4 px-4 font-semibold text-gray-700 text-sm rounded-tl-lg">Sigla</th>
                   <th className="text-left py-4 px-4 font-semibold text-gray-700 text-sm">Nome Cliente</th>
                   <th className="text-left py-4 px-4 font-semibold text-gray-700 text-sm">Città Principale</th>
+                  <th className="text-left py-4 px-4 font-semibold text-gray-700 text-sm">Codice SDI</th>
                   <th className="text-left py-4 px-4 font-semibold text-gray-700 text-sm">N. Commesse</th>
                   <th className="text-left py-4 px-4 font-semibold text-gray-700 text-sm rounded-tr-lg">Azioni</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {filteredClients.map((client) => (
+                {pagination.pageItems.map((client) => (
                   <tr key={client.id} className="hover:bg-gray-50 transition-colors">
                     <td className="py-4 px-4 font-mono text-sm font-semibold text-primary" data-testid={`client-sigla-${client.id}`}>
                       {client.sigla}
@@ -325,6 +500,9 @@ export default function ClientsTable() {
                     </td>
                     <td className="py-4 px-4 text-sm text-gray-600" data-testid={`client-city-${client.id}`}>
                       {client.city || "-"}
+                    </td>
+                    <td className="py-4 px-4 font-mono text-sm text-gray-700" data-testid={`client-sdi-${client.id}`}>
+                      {client.codiceSdi || "-"}
                     </td>
                     <td className="py-4 px-4" data-testid={`client-projects-count-${client.id}`}>
                       <span className={`px-3 py-1 rounded-full text-sm font-medium ${
@@ -342,32 +520,39 @@ export default function ClientsTable() {
                           variant="ghost"
                           className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                           title="Modifica"
+                          aria-label="Modifica cliente"
                           onClick={() => handleEditClient(client)}
                           disabled={updateClientMutation.isPending}
                           data-testid={`edit-client-${client.id}`}
                         >
-                          {updateClientMutation.isPending ? '⏳' : '✏️'}
+                          {updateClientMutation.isPending
+                            ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                            : <Pencil className="h-4 w-4" aria-hidden="true" />}
                         </Button>
                         <Button
                           size="sm"
                           variant="ghost"
                           className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
                           title="Visualizza commesse"
+                          aria-label="Visualizza commesse del cliente"
                           onClick={() => handleViewProjects(client)}
                           data-testid={`view-client-projects-${client.id}`}
                         >
-                          📋
+                          <ClipboardList className="h-4 w-4" aria-hidden="true" />
                         </Button>
                         <Button
                           size="sm"
                           variant="ghost"
                           className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                           title="Elimina"
+                          aria-label="Elimina cliente"
                           onClick={() => handleDeleteClient(client)}
                           disabled={deleteClientMutation.isPending}
                           data-testid={`delete-client-${client.id}`}
                         >
-                          {deleteClientMutation.isPending ? '⏳' : '🗑️'}
+                          {deleteClientMutation.isPending
+                            ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                            : <Trash2 className="h-4 w-4" aria-hidden="true" />}
                         </Button>
                       </div>
                     </td>
@@ -377,8 +562,10 @@ export default function ClientsTable() {
             </table>
           </div>
           
-          <div className="mt-6 text-sm text-gray-500" data-testid="clients-count">
-            Mostrando <strong>{filteredClients.length}</strong> di <strong>{clients.length}</strong> clienti
+          <TablePagination pagination={pagination} scrollTopRef={tableTopRef} />
+
+          <div className="mt-2 text-sm text-gray-600" data-testid="clients-count">
+            Totale filtrato: <strong>{filteredClients.length}</strong> di <strong>{clients.length}</strong> clienti
           </div>
         </>
       )}
@@ -421,7 +608,7 @@ export default function ClientsTable() {
                         {project.object}
                       </div>
                       <div className="mt-1 text-xs text-gray-500">
-                        {project.city} • {project.year} • Template: {project.template}
+                        {project.city} • {project.year < 100 ? 2000 + project.year : project.year} • Template: {project.template}
                       </div>
                     </div>
                   </div>
@@ -429,7 +616,7 @@ export default function ClientsTable() {
               </div>
             ) : (
               <div className="text-center py-8 text-gray-500">
-                <div className="text-3xl mb-2">📋</div>
+                <ClipboardList className="h-10 w-10 mx-auto mb-2 text-gray-400" aria-hidden="true" />
                 <p>Nessuna commessa trovata per questo cliente</p>
               </div>
             )}
@@ -493,6 +680,25 @@ export default function ClientsTable() {
                 />
               </div>
 
+              <FormField
+                control={editForm.control}
+                name="codiceInterno"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Codice Interno</FormLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        placeholder="Codice gestionale legacy (es. UFJYTW)"
+                        maxLength={50}
+                        disabled={updateClientMutation.isPending}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
               {/* Indirizzo */}
               <FormField
                 control={editForm.control}
@@ -512,7 +718,7 @@ export default function ClientsTable() {
                 )}
               />
 
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-4 gap-4">
                 <FormField
                   control={editForm.control}
                   name="city"
@@ -569,10 +775,29 @@ export default function ClientsTable() {
                     </FormItem>
                   )}
                 />
+
+                <FormField
+                  control={editForm.control}
+                  name="paese"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Paese</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          placeholder="Italia"
+                          maxLength={60}
+                          disabled={updateClientMutation.isPending}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
               </div>
 
               {/* Dati fiscali */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
                 <FormField
                   control={editForm.control}
                   name="piva"
@@ -604,6 +829,26 @@ export default function ClientsTable() {
                           placeholder="RSSMRA80A01H501U"
                           maxLength={16}
                           className="uppercase"
+                          disabled={updateClientMutation.isPending}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={editForm.control}
+                  name="codiceSdi"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Codice SDI</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          placeholder="0000000"
+                          maxLength={7}
+                          className="uppercase font-mono"
                           disabled={updateClientMutation.isPending}
                         />
                       </FormControl>
@@ -763,6 +1008,25 @@ export default function ClientsTable() {
                 />
               </div>
 
+              <FormField
+                control={newClientForm.control}
+                name="codiceInterno"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Codice Interno</FormLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        placeholder="Codice gestionale legacy (es. UFJYTW)"
+                        maxLength={50}
+                        disabled={createClientMutation.isPending}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
               {/* Indirizzo */}
               <FormField
                 control={newClientForm.control}
@@ -782,7 +1046,7 @@ export default function ClientsTable() {
                 )}
               />
 
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-4 gap-4">
                 <FormField
                   control={newClientForm.control}
                   name="city"
@@ -839,10 +1103,29 @@ export default function ClientsTable() {
                     </FormItem>
                   )}
                 />
+
+                <FormField
+                  control={newClientForm.control}
+                  name="paese"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Paese</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          placeholder="Italia"
+                          maxLength={60}
+                          disabled={createClientMutation.isPending}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
               </div>
 
               {/* Dati fiscali */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
                 <FormField
                   control={newClientForm.control}
                   name="piva"
@@ -874,6 +1157,26 @@ export default function ClientsTable() {
                           placeholder="RSSMRA80A01H501U"
                           maxLength={16}
                           className="uppercase"
+                          disabled={createClientMutation.isPending}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={newClientForm.control}
+                  name="codiceSdi"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Codice SDI</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          placeholder="0000000"
+                          maxLength={7}
+                          className="uppercase font-mono"
                           disabled={createClientMutation.isPending}
                         />
                       </FormControl>
@@ -1008,8 +1311,9 @@ export default function ClientsTable() {
                   </div>
                 </div>
               )}
-              <div className="text-red-600 font-medium mt-2">
-                ⚠️ Questa azione non può essere annullata.
+              <div className="text-red-600 font-medium mt-2 flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
+                <span>Questa azione non può essere annullata.</span>
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>

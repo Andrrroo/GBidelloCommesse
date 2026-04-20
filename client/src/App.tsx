@@ -6,7 +6,9 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Loader2 } from "lucide-react";
 import Dashboard from "@/pages/dashboard";
 import { LoginPage } from "@/pages/LoginPage";
+import NotFound from "@/pages/not-found";
 import { useAuth } from "@/hooks/useAuth";
+import { ErrorBoundary } from "@/components/error-boundary";
 
 function LoadingScreen() {
   return (
@@ -36,9 +38,7 @@ function AppContent() {
       <Switch>
         <Route path="/" component={() => <Dashboard user={user} onLogout={logout} />} />
         <Route path="/dashboard" component={() => <Dashboard user={user} onLogout={logout} />} />
-        <Route>
-          <Dashboard user={user} onLogout={logout} />
-        </Route>
+        <Route component={NotFound} />
       </Switch>
     </div>
   );
@@ -46,11 +46,13 @@ function AppContent() {
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <AppContent />
-      </TooltipProvider>
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <AppContent />
+        </TooltipProvider>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }
 

@@ -9,8 +9,11 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { UserPlus, Users, Clock, TrendingUp, Trash2, Edit } from "lucide-react";
-import { type Project } from "@shared/schema";
+import { useAuth } from "@/hooks/useAuth";
+import { apiRequest } from "@/lib/queryClient";
+import { UserPlus, Users, Clock, TrendingUp, Trash2, Edit, Wallet } from "lucide-react";
+import { type Project, type Collaboratore } from "@shared/schema";
+import { COLLABORATORE_ROLES as ROLES, getRoleLabel } from "@/lib/collaboratori-roles";
 
 interface ProjectResource {
   id: string;
@@ -20,42 +23,47 @@ interface ProjectResource {
   role: string;
   oreAssegnate: number;
   oreLavorate: number;
+  orePagate?: number;
   costoOrario: number;
   isResponsabile: boolean;
   dataInizio?: string;
   dataFine?: string;
+  collaboratoreId?: string;
 }
 
-const ROLES = [
-  { value: "progettista", label: "Progettista", icon: "📐" },
-  { value: "dl", label: "Direttore Lavori", icon: "👷" },
-  { value: "csp", label: "CSP - Coordinatore Sicurezza Progettazione", icon: "🦺" },
-  { value: "cse", label: "CSE - Coordinatore Sicurezza Esecuzione", icon: "⚠️" },
-  { value: "collaudatore", label: "Collaudatore", icon: "✅" },
-  { value: "tecnico", label: "Tecnico", icon: "🔧" },
-  { value: "geologo", label: "Geologo", icon: "🪨" },
-  { value: "strutturista", label: "Ing. Strutturista", icon: "🏗️" },
-  { value: "impiantista", label: "Ing. Impiantista", icon: "⚡" },
-  { value: "altro", label: "Altro", icon: "👤" }
-];
+
+type ResourceSource = 'anagrafica' | 'esterna';
 
 export default function GestioneRisorse() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingResource, setEditingResource] = useState<ProjectResource | null>(null);
   const [selectedProject, setSelectedProject] = useState<string>("");
+  // Distinzione tra risorsa dall'anagrafica collaboratori (default) e risorsa
+  // "esterna" inserita a mano (es. freelance occasionale, consulente una tantum)
+  // per cui non ha senso creare un record in anagrafica.
+  const [resourceSource, setResourceSource] = useState<ResourceSource>('anagrafica');
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { isAdmin: isAdminFn } = useAuth();
+  const isAdmin = isAdminFn();
 
   const [formData, setFormData] = useState({
+    collaboratoreId: "",
     userName: "",
     userEmail: "",
     role: "progettista",
-    oreAssegnate: 0,
-    oreLavorate: 0,
-    costoOrario: 0,
+    oreAssegnate: "" as string | number,
+    oreLavorate: "" as string | number,
+    orePagate: "" as string | number,
+    costoOrario: "" as string | number,
     isResponsabile: false,
     dataInizio: "",
     dataFine: ""
+  });
+
+  // Fetch collaboratori anagrafica
+  const { data: collaboratori = [] } = useQuery<Collaboratore[]>({
+    queryKey: ["/api/collaboratori"]
   });
 
   // Fetch progetti
@@ -75,15 +83,7 @@ export default function GestioneRisorse() {
         ? `/api/project-resources/${editingResource.id}`
         : "/api/project-resources";
       const method = editingResource ? "PUT" : "POST";
-
-      const res = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-        credentials: "include"
-      });
-
-      if (!res.ok) throw new Error("Errore nel salvataggio");
+      const res = await apiRequest(method, url, data);
       return res.json();
     },
     onSuccess: () => {
@@ -106,11 +106,7 @@ export default function GestioneRisorse() {
   // Delete resource mutation
   const deleteResourceMutation = useMutation({
     mutationFn: async (id: string) => {
-      const res = await fetch(`/api/project-resources/${id}`, {
-        method: "DELETE",
-        credentials: "include"
-      });
-      if (!res.ok) throw new Error("Errore nell'eliminazione");
+      const res = await apiRequest("DELETE", `/api/project-resources/${id}`);
       return res.json();
     },
     onSuccess: () => {
@@ -124,19 +120,35 @@ export default function GestioneRisorse() {
 
   const resetForm = () => {
     setFormData({
+      collaboratoreId: "",
       userName: "",
       userEmail: "",
       role: "progettista",
-      oreAssegnate: 0,
-      oreLavorate: 0,
-      costoOrario: 0,
+      oreAssegnate: "",
+      oreLavorate: "",
+      orePagate: "",
+      costoOrario: "",
       isResponsabile: false,
       dataInizio: "",
       dataFine: ""
     });
     setSelectedProject("");
     setEditingResource(null);
+    setResourceSource('anagrafica');
     setIsDialogOpen(false);
+  };
+
+  const handleSelectCollaboratore = (collaboratoreId: string) => {
+    const c = collaboratori.find(x => x.id === collaboratoreId);
+    if (!c) return;
+    setFormData(prev => ({
+      ...prev,
+      collaboratoreId,
+      userName: `${c.nome} ${c.cognome}`,
+      userEmail: c.email || "",
+      costoOrario: c.costoOrario,
+      role: c.ruolo || prev.role,
+    }));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -151,23 +163,60 @@ export default function GestioneRisorse() {
       return;
     }
 
-    saveResourceMutation.mutate({
+    if (resourceSource === 'anagrafica' && !formData.collaboratoreId) {
+      toast({
+        title: "Errore",
+        description: "Seleziona un collaboratore dall'anagrafica o passa a 'Risorsa esterna'",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!formData.userName || !String(formData.userName).trim()) {
+      toast({
+        title: "Errore",
+        description: "Il nome della risorsa è obbligatorio",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const payload: any = {
       projectId: selectedProject,
-      ...formData,
-      costoOrario: Math.round(formData.costoOrario * 100) // Converti in centesimi
-    });
+      userName: String(formData.userName).trim(),
+      role: formData.role,
+      oreAssegnate: parseFloat(String(formData.oreAssegnate)) || 0,
+      oreLavorate: parseFloat(String(formData.oreLavorate)) || 0,
+      orePagate: parseFloat(String(formData.orePagate)) || 0,
+      costoOrario: Math.round((parseFloat(String(formData.costoOrario)) || 0) * 100),
+      isResponsabile: formData.isResponsabile,
+    };
+    if (formData.userEmail) payload.userEmail = formData.userEmail;
+    if (formData.dataInizio) payload.dataInizio = formData.dataInizio;
+    if (formData.dataFine) payload.dataFine = formData.dataFine;
+    // collaboratoreId solo se in modalità anagrafica
+    if (resourceSource === 'anagrafica' && formData.collaboratoreId) {
+      payload.collaboratoreId = formData.collaboratoreId;
+    }
+
+    saveResourceMutation.mutate(payload);
   };
 
   const handleEdit = (resource: ProjectResource) => {
     setEditingResource(resource);
     setSelectedProject(resource.projectId);
+    // Se la risorsa ha un collaboratoreId legato all'anagrafica la apriamo in
+    // modalità "anagrafica", altrimenti è una risorsa esterna (inserita a mano)
+    setResourceSource(resource.collaboratoreId ? 'anagrafica' : 'esterna');
     setFormData({
+      collaboratoreId: resource.collaboratoreId || "",
       userName: resource.userName,
       userEmail: resource.userEmail || "",
       role: resource.role,
       oreAssegnate: resource.oreAssegnate,
       oreLavorate: resource.oreLavorate,
-      costoOrario: resource.costoOrario / 100, // Converti da centesimi
+      orePagate: resource.orePagate ?? 0,
+      costoOrario: resource.costoOrario / 100,
       isResponsabile: resource.isResponsabile,
       dataInizio: resource.dataInizio?.split('T')[0] || "",
       dataFine: resource.dataFine?.split('T')[0] || ""
@@ -180,7 +229,10 @@ export default function GestioneRisorse() {
     const projectResources = resources?.filter(r => r.projectId === project.id) || [];
     const totalOreAssegnate = projectResources.reduce((sum, r) => sum + r.oreAssegnate, 0);
     const totalOreLavorate = projectResources.reduce((sum, r) => sum + r.oreLavorate, 0);
-    const totalCosti = projectResources.reduce((sum, r) => sum + (r.oreLavorate * r.costoOrario), 0);
+    // costoOrario è rimosso dal payload per non-admin (sanitize server-side):
+    // usiamo `|| 0` per evitare NaN nei calcoli, tanto la UI che usa questo
+    // valore è gated dietro `isAdmin`.
+    const totalCosti = projectResources.reduce((sum, r) => sum + (r.oreLavorate * (r.costoOrario || 0)), 0);
     const responsabile = projectResources.find(r => r.isResponsabile);
 
     return {
@@ -200,7 +252,7 @@ export default function GestioneRisorse() {
     totalRisorse: resources?.length || 0,
     totalOreAssegnate: resources?.reduce((sum, r) => sum + r.oreAssegnate, 0) || 0,
     totalOreLavorate: resources?.reduce((sum, r) => sum + r.oreLavorate, 0) || 0,
-    totalCosti: resources?.reduce((sum, r) => sum + (r.oreLavorate * r.costoOrario), 0) || 0
+    totalCosti: resources?.reduce((sum, r) => sum + (r.oreLavorate * (r.costoOrario || 0)), 0) || 0
   };
 
   return (
@@ -247,26 +299,111 @@ export default function GestioneRisorse() {
                 </Select>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="userName">Nome Risorsa *</Label>
-                  <Input
-                    id="userName"
-                    value={formData.userName}
-                    onChange={(e) => setFormData({ ...formData, userName: e.target.value })}
-                    required
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="userEmail">Email</Label>
-                  <Input
-                    id="userEmail"
-                    type="email"
-                    value={formData.userEmail}
-                    onChange={(e) => setFormData({ ...formData, userEmail: e.target.value })}
-                  />
+              {/* Toggle tipo risorsa: anagrafica vs esterna */}
+              <div>
+                <Label>Tipo risorsa *</Label>
+                <div className="grid grid-cols-2 gap-2 mt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setResourceSource('anagrafica');
+                      // Reset campi manuali se stai passando dall'esterna
+                      setFormData(prev => ({
+                        ...prev,
+                        collaboratoreId: "",
+                        userName: "",
+                        userEmail: "",
+                        costoOrario: "",
+                      }));
+                    }}
+                    className={`p-3 rounded-md border-2 text-left text-sm transition-all ${
+                      resourceSource === 'anagrafica'
+                        ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
+                        : 'border-gray-200 hover:border-gray-300 bg-white'
+                    }`}
+                    data-testid="resource-source-anagrafica"
+                  >
+                    <div className="font-medium">Dall'anagrafica</div>
+                    <div className="text-xs text-gray-600">Collaboratore interno registrato</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setResourceSource('esterna');
+                      setFormData(prev => ({
+                        ...prev,
+                        collaboratoreId: "",
+                      }));
+                    }}
+                    className={`p-3 rounded-md border-2 text-left text-sm transition-all ${
+                      resourceSource === 'esterna'
+                        ? 'border-purple-500 bg-purple-50 ring-2 ring-purple-200'
+                        : 'border-gray-200 hover:border-gray-300 bg-white'
+                    }`}
+                    data-testid="resource-source-esterna"
+                  >
+                    <div className="font-medium">Esterna</div>
+                    <div className="text-xs text-gray-600">Freelance o risorsa occasionale</div>
+                  </button>
                 </div>
               </div>
+
+              {resourceSource === 'anagrafica' ? (
+                <div>
+                  <Label htmlFor="collaboratore">Collaboratore *</Label>
+                  <Select
+                    value={formData.collaboratoreId}
+                    onValueChange={handleSelectCollaboratore}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleziona dall'anagrafica collaboratori" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {collaboratori.filter(c => c.active).length === 0 ? (
+                        <div className="px-2 py-3 text-sm text-gray-500">
+                          Nessun collaboratore in anagrafica. Chiedi all'admin di crearne uno
+                          oppure passa a "Risorsa esterna".
+                        </div>
+                      ) : (
+                        collaboratori.filter(c => c.active).map(c => (
+                          <SelectItem key={c.id} value={c.id}>
+                            {c.nome} {c.cognome} {c.ruolo ? `— ${c.ruolo}` : ""}{isAdmin && c.costoOrario !== undefined ? ` (${new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(c.costoOrario)}/h)` : ""}
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                  {formData.userName && (
+                    <p className="text-xs text-gray-500 mt-1">Selezionato: <strong>{formData.userName}</strong></p>
+                  )}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="userNameExt">Nome e cognome *</Label>
+                    <Input
+                      id="userNameExt"
+                      placeholder="Es. Mario Rossi"
+                      value={formData.userName}
+                      onChange={(e) => setFormData({ ...formData, userName: e.target.value })}
+                      data-testid="input-username-esterna"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Non verrà creato un record in anagrafica
+                    </p>
+                  </div>
+                  <div>
+                    <Label htmlFor="userEmailExt">Email (opzionale)</Label>
+                    <Input
+                      id="userEmailExt"
+                      type="email"
+                      placeholder="mario.rossi@esempio.com"
+                      value={formData.userEmail}
+                      onChange={(e) => setFormData({ ...formData, userEmail: e.target.value })}
+                    />
+                  </div>
+                </div>
+              )}
 
               <div>
                 <Label htmlFor="role">Ruolo *</Label>
@@ -278,46 +415,82 @@ export default function GestioneRisorse() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {ROLES.map(role => (
-                      <SelectItem key={role.value} value={role.value}>
-                        {role.icon} {role.label}
-                      </SelectItem>
-                    ))}
+                    {ROLES.map(role => {
+                      const Icon = role.icon;
+                      return (
+                        <SelectItem key={role.value} value={role.value}>
+                          <span className="inline-flex items-center gap-2">
+                            <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+                            {role.label}
+                          </span>
+                        </SelectItem>
+                      );
+                    })}
                   </SelectContent>
                 </Select>
               </div>
 
-              <div className="grid grid-cols-3 gap-4">
+              {/* Per collaboratori interni il costoOrario è gestito in anagrafica
+                  (il server lo sovrascrive dal record anagrafica in POST/PUT)
+                  quindi il campo è visibile solo per risorse esterne agli admin. */}
+              <div className={isAdmin && resourceSource === 'esterna' ? "grid grid-cols-2 gap-4" : ""}>
                 <div>
                   <Label htmlFor="oreAssegnate">Ore Assegnate</Label>
                   <Input
                     id="oreAssegnate"
                     type="number"
                     value={formData.oreAssegnate}
-                    onChange={(e) => setFormData({ ...formData, oreAssegnate: parseInt(e.target.value) || 0 })}
+                    onChange={(e) => setFormData({ ...formData, oreAssegnate: e.target.value })}
                     min="0"
                   />
                 </div>
+                {isAdmin && resourceSource === 'esterna' && (
+                  <div>
+                    <Label htmlFor="costoOrario">Costo Orario (€)</Label>
+                    <Input
+                      id="costoOrario"
+                      type="number"
+                      step="5"
+                      value={formData.costoOrario}
+                      onChange={(e) => setFormData({ ...formData, costoOrario: e.target.value })}
+                      min="0"
+                      placeholder="Inserisci il costo orario"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Campo obbligatorio per risorse esterne (freelance/consulenti)</p>
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="oreLavorate">Ore Lavorate</Label>
                   <Input
                     id="oreLavorate"
                     type="number"
                     value={formData.oreLavorate}
-                    onChange={(e) => setFormData({ ...formData, oreLavorate: parseInt(e.target.value) || 0 })}
+                    onChange={(e) => setFormData({ ...formData, oreLavorate: e.target.value })}
                     min="0"
                   />
                 </div>
                 <div>
-                  <Label htmlFor="costoOrario">Costo Orario (€)</Label>
+                  <Label htmlFor="orePagate">Ore Pagate</Label>
                   <Input
-                    id="costoOrario"
+                    id="orePagate"
                     type="number"
-                    step="0.01"
-                    value={formData.costoOrario}
-                    onChange={(e) => setFormData({ ...formData, costoOrario: parseFloat(e.target.value) || 0 })}
+                    value={formData.orePagate}
+                    onChange={(e) => setFormData({ ...formData, orePagate: e.target.value })}
                     min="0"
                   />
+                  <p className="text-xs text-gray-500 mt-1">
+                    {(() => {
+                      const lav = parseFloat(String(formData.oreLavorate)) || 0;
+                      const pag = parseFloat(String(formData.orePagate)) || 0;
+                      const diff = lav - pag;
+                      if (diff > 0) return `${diff} ore ancora da pagare`;
+                      if (diff < 0) return `${Math.abs(diff)} ore pagate in eccesso`;
+                      return lav > 0 ? "Tutte le ore sono state pagate" : "";
+                    })()}
+                  </p>
                 </div>
               </div>
 
@@ -406,19 +579,21 @@ export default function GestioneRisorse() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">Costi Totali</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center justify-between">
-              <div className="text-2xl font-bold">
-                €{(overallStats.totalCosti / 100).toLocaleString('it-IT', { minimumFractionDigits: 2 })}
+        {isAdmin && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-gray-600">Costi Totali</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-between">
+                <div className="text-2xl font-bold">
+                  €{(overallStats.totalCosti / 100).toLocaleString('it-IT', { minimumFractionDigits: 2 })}
+                </div>
+                <Wallet className="h-6 w-6 text-green-600" aria-hidden="true" />
               </div>
-              <span className="text-2xl">💰</span>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {/* Tabelle Risorse per Commessa */}
@@ -447,8 +622,8 @@ export default function GestioneRisorse() {
                         <th className="text-left py-3 px-4">Commessa</th>
                         <th className="text-left py-3 px-4">Ruolo</th>
                         <th className="text-right py-3 px-4">Ore Ass./Lav.</th>
-                        <th className="text-right py-3 px-4">Costo Orario</th>
-                        <th className="text-right py-3 px-4">Costo Totale</th>
+                        {isAdmin && <th className="text-right py-3 px-4">Costo Orario</th>}
+                        {isAdmin && <th className="text-right py-3 px-4">Costo Totale</th>}
                         <th className="text-center py-3 px-4">Azioni</th>
                       </tr>
                     </thead>
@@ -478,8 +653,12 @@ export default function GestioneRisorse() {
                               </div>
                             </td>
                             <td className="py-3 px-4">
-                              <Badge variant="outline">
-                                {roleInfo?.icon} {roleInfo?.label}
+                              <Badge variant="outline" className="inline-flex items-center gap-1">
+                                {roleInfo && (() => {
+                                  const Icon = roleInfo.icon;
+                                  return <Icon className="h-3 w-3" aria-hidden="true" />;
+                                })()}
+                                {roleInfo?.label}
                               </Badge>
                             </td>
                             <td className="py-3 px-4 text-right">
@@ -492,12 +671,16 @@ export default function GestioneRisorse() {
                                 </div>
                               </div>
                             </td>
-                            <td className="py-3 px-4 text-right">
-                              €{(resource.costoOrario / 100).toFixed(2)}
-                            </td>
-                            <td className="py-3 px-4 text-right font-medium">
-                              €{(costoTotale / 100).toLocaleString('it-IT', { minimumFractionDigits: 2 })}
-                            </td>
+                            {isAdmin && (
+                              <td className="py-3 px-4 text-right">
+                                €{(resource.costoOrario / 100).toFixed(2)}
+                              </td>
+                            )}
+                            {isAdmin && (
+                              <td className="py-3 px-4 text-right font-medium">
+                                €{(costoTotale / 100).toLocaleString('it-IT', { minimumFractionDigits: 2 })}
+                              </td>
+                            )}
                             <td className="py-3 px-4">
                               <div className="flex items-center justify-center gap-2">
                                 <Button
@@ -555,7 +738,7 @@ export default function GestioneRisorse() {
                   <p className="text-center text-gray-500 py-4">Nessuna risorsa assegnata</p>
                 ) : (
                   <>
-                    <div className="grid grid-cols-4 gap-4 mb-4">
+                    <div className={isAdmin ? "grid grid-cols-4 gap-4 mb-4" : "grid grid-cols-3 gap-4 mb-4"}>
                       <div className="text-center p-3 bg-blue-50 rounded-lg">
                         <div className="text-sm text-gray-600">Risorse</div>
                         <div className="text-xl font-bold">{stat.resources.length}</div>
@@ -568,12 +751,14 @@ export default function GestioneRisorse() {
                         <div className="text-sm text-gray-600">Ore Lavorate</div>
                         <div className="text-xl font-bold">{stat.totalOreLavorate}h</div>
                       </div>
-                      <div className="text-center p-3 bg-purple-50 rounded-lg">
-                        <div className="text-sm text-gray-600">Costo Totale</div>
-                        <div className="text-xl font-bold">
-                          €{(stat.totalCosti / 100).toLocaleString('it-IT', { minimumFractionDigits: 0 })}
+                      {isAdmin && (
+                        <div className="text-center p-3 bg-purple-50 rounded-lg">
+                          <div className="text-sm text-gray-600">Costo Totale</div>
+                          <div className="text-xl font-bold">
+                            €{(stat.totalCosti / 100).toLocaleString('it-IT', { minimumFractionDigits: 0 })}
+                          </div>
                         </div>
-                      </div>
+                      )}
                     </div>
 
                     <div className="space-y-2">
@@ -584,15 +769,23 @@ export default function GestioneRisorse() {
                             <div className="flex items-center gap-3">
                               <div>
                                 <div className="font-medium">{resource.userName}</div>
-                                <div className="text-sm text-gray-500">{roleInfo?.icon} {roleInfo?.label}</div>
+                                <div className="text-sm text-gray-500 inline-flex items-center gap-1">
+                                  {roleInfo && (() => {
+                                    const Icon = roleInfo.icon;
+                                    return <Icon className="h-3 w-3" aria-hidden="true" />;
+                                  })()}
+                                  {roleInfo?.label}
+                                </div>
                               </div>
                             </div>
                             <div className="flex items-center gap-4">
                               <div className="text-right text-sm">
                                 <div className="text-gray-600">Ore: {resource.oreLavorate}/{resource.oreAssegnate}</div>
-                                <div className="font-medium">
-                                  €{((resource.oreLavorate * resource.costoOrario) / 100).toLocaleString('it-IT', { minimumFractionDigits: 2 })}
-                                </div>
+                                {isAdmin && (
+                                  <div className="font-medium">
+                                    €{((resource.oreLavorate * resource.costoOrario) / 100).toLocaleString('it-IT', { minimumFractionDigits: 2 })}
+                                  </div>
+                                )}
                               </div>
                               <div className="flex gap-1">
                                 <Button

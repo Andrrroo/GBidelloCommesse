@@ -8,6 +8,7 @@ vite.config.ts.*
 # Environment files
 .env.local
 .env
+.env.*.local
 
 # Local directories
 .local/
@@ -16,7 +17,12 @@ vite.config.ts.*
 # Temporary files
 nul
 
-# Ignore backup and temp files in data directory
-data/*.bak
-data/*.tmp
-data/*-backup.json
+# Dati reali dell'applicazione (clienti, fatture, utenti, password hash)
+# NON vanno mai committati, neppure in un repo privato.
+data/
+uploads/
+attached_assets/
+
+# Automatic snapshot backups created on server startup
+backups/
+data-backup-*/

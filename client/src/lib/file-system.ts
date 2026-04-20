@@ -9,7 +9,7 @@ export interface ProjectTemplate {
   structure: FolderStructure;
 }
 
-// Template autentico Gbidello Engineering da file ZIP di riferimento
+// Template autentico GB Engineering da file ZIP di riferimento
 const TEMPLATE_LUNGO: FolderStructure = {
   "1_CONSEGNA": {},
   "2_PERMIT": {},
@@ -139,27 +139,24 @@ export const downloadScriptFiles = (
 
 // Utility functions
 export const sanitizeFileName = (fileName: string): string => {
-  console.log(`🔍 SANITIZE: Original filename: "${fileName}"`);
-  
   // List of valid G2 template folder names that should not be prefixed
   const validG2FolderNames = [
     '1_CONSEGNA', '2_PERMIT', '3_PROGETTO', '4_MATERIALE_RICEVUTO', '5_CANTIERE',
     '6_VERBALI_NOTIFICHE_COMUNICAZIONI', '7_SOPRALLUOGHI', '8_VARIANTI', '9_PARCELLA', '10_INCARICO',
     '0_PSC_FE'
   ];
-  
+
   // If this is a valid G2 template folder name, return as-is (they are already valid)
   if (validG2FolderNames.includes(fileName)) {
-    console.log(`✅ SANITIZE: Valid G2 template folder, keeping original: "${fileName}"`);
     return fileName;
   }
-  
+
   // List of reserved names in Windows
   const reservedNames = ['CON', 'PRN', 'AUX', 'NUL', 'COM1', 'COM2', 'COM3', 'COM4', 'COM5', 'COM6', 'COM7', 'COM8', 'COM9', 'LPT1', 'LPT2', 'LPT3', 'LPT4', 'LPT5', 'LPT6', 'LPT7', 'LPT8', 'LPT9'];
-  
+
   // Check if we're likely in a Windows local environment
   const isWindowsLocal = window.location.hostname === 'localhost' && navigator.platform.toLowerCase().includes('win');
-  
+
   // Ultra-conservative approach for local Windows environments
   let sanitized = fileName
     // First pass: replace known problematic characters
@@ -172,40 +169,33 @@ export const sanitizeFileName = (fileName: string): string => {
     .replace(/^_+|_+$/g, '')
     // Limit length to be safe for all filesystems (increased for project names)
     .substring(0, 100);
-    
-  console.log(`🔧 SANITIZE: After basic cleaning: "${sanitized}"`);
-    
+
   // Check if it's a reserved name and handle it
   const nameUpper = sanitized.toUpperCase();
   if (reservedNames.includes(nameUpper) || reservedNames.includes(nameUpper.replace(/^\d+_?/, ''))) {
     sanitized = `DIR_${sanitized}`;
-    console.log(`⚠️ SANITIZE: Reserved name detected, prefixed: "${sanitized}"`);
   }
-  
+
   // Ensure it doesn't start with a number - prefix with a letter instead of PROJ_
   // But only for non-template folder names
   if (/^\d/.test(sanitized) && !validG2FolderNames.includes(fileName)) {
     sanitized = `F_${sanitized}`;
-    console.log(`🔧 SANITIZE: Started with number, prefixed: "${sanitized}"`);
   }
-  
+
   // Ensure it's not empty
   if (!sanitized || sanitized === '_') {
     sanitized = 'FOLDER';
-    console.log(`⚠️ SANITIZE: Empty result, using fallback: "${sanitized}"`);
   }
-  
+
   // Final validation - make sure it's truly safe
   // Allow numbers at the start for G2 template folders
-  const isValidPattern = /^[a-zA-Z][a-zA-Z0-9_]*$/.test(sanitized) || 
+  const isValidPattern = /^[a-zA-Z][a-zA-Z0-9_]*$/.test(sanitized) ||
                         /^\d+_[a-zA-Z][a-zA-Z0-9_]*$/.test(sanitized);
-  
+
   if (!isValidPattern) {
     sanitized = `SAFE_${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-    console.log(`🚨 SANITIZE: Final validation failed, using random: "${sanitized}"`);
   }
-  
-  console.log(`✅ SANITIZE: Final result: "${fileName}" -> "${sanitized}"`);
+
   return sanitized;
 };
 

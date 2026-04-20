@@ -72,7 +72,7 @@ export default function EconomicDashboardCard() {
 
   // Dati per grafico distribuzione per anno
   const yearlyData = projects.reduce((acc, project) => {
-    const year = `20${project.year.toString().padStart(2, '0')}`;
+    const year = String(project.year < 100 ? 2000 + project.year : project.year);
     const metadata = project.metadata as ProjectMetadata;
     const importo = metadata?.importoServizio || 0;
 
@@ -248,7 +248,7 @@ export default function EconomicDashboardCard() {
                   <div className="text-2xl font-bold text-gray-900">
                     {formatImporto(importoServiziConclusi)}
                   </div>
-                  <Progress value={(importoServiziConclusi / totalImportoServizi) * 100} className="mt-2 h-2" />
+                  <Progress value={totalImportoServizi > 0 ? (importoServiziConclusi / totalImportoServizi) * 100 : 0} className="mt-2 h-2" />
                   <p className="text-xs text-gray-500 mt-2">
                     {projectsConcluse.length} commesse concluse
                   </p>
@@ -265,7 +265,7 @@ export default function EconomicDashboardCard() {
                   <div className="text-2xl font-bold text-gray-900">
                     {formatImporto(importoServiziInCorso)}
                   </div>
-                  <Progress value={(importoServiziInCorso / totalImportoServizi) * 100} className="mt-2 h-2 [&>div]:bg-yellow-500" />
+                  <Progress value={totalImportoServizi > 0 ? (importoServiziInCorso / totalImportoServizi) * 100 : 0} className="mt-2 h-2" indicatorClassName="bg-yellow-500" />
                   <p className="text-xs text-gray-500 mt-2">
                     In fase di realizzazione
                   </p>
@@ -280,9 +280,9 @@ export default function EconomicDashboardCard() {
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold text-gray-900">
-                    {((projectsConcluse.length / projects.length) * 100).toFixed(1)}%
+                    {projects.length > 0 ? ((projectsConcluse.length / projects.length) * 100).toFixed(1) : '0.0'}%
                   </div>
-                  <Progress value={(projectsConcluse.length / projects.length) * 100} className="mt-2 h-2 [&>div]:bg-green-500" />
+                  <Progress value={projects.length > 0 ? (projectsConcluse.length / projects.length) * 100 : 0} className="mt-2 h-2" indicatorClassName="bg-green-500" />
                   <p className="text-xs text-gray-500 mt-2">
                     {projectsConcluse.length}/{projects.length} commesse
                   </p>
@@ -353,8 +353,29 @@ export default function EconomicDashboardCard() {
                         cx="50%"
                         cy="50%"
                         labelLine={false}
-                        label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                        outerRadius={100}
+                        label={(props: any) => {
+                          const { cx, cy, midAngle, innerRadius, outerRadius, percent } = props;
+                          if (!percent || percent < 0.05) return null;
+                          const RADIAN = Math.PI / 180;
+                          const radius = innerRadius + (outerRadius - innerRadius) * 0.6;
+                          const x = cx + radius * Math.cos(-midAngle * RADIAN);
+                          const y = cy + radius * Math.sin(-midAngle * RADIAN);
+                          return (
+                            <text
+                              x={x}
+                              y={y}
+                              fill="white"
+                              textAnchor="middle"
+                              dominantBaseline="central"
+                              fontSize={13}
+                              fontWeight={700}
+                              style={{ textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}
+                            >
+                              {`${(percent * 100).toFixed(0)}%`}
+                            </text>
+                          );
+                        }}
+                        outerRadius={95}
                         fill="#8884d8"
                         dataKey="value"
                       >
@@ -369,8 +390,8 @@ export default function EconomicDashboardCard() {
                     </PieChart>
                   </ResponsiveContainer>
                   <div className="mt-4 space-y-2">
-                    {statusData.map((item, index) => (
-                      <div key={index} className="flex items-center justify-between text-sm">
+                    {statusData.map((item) => (
+                      <div key={item.name} className="flex items-center justify-between text-sm">
                         <div className="flex items-center gap-2">
                           <div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.color }} />
                           <span className="text-gray-700">{item.name}</span>
@@ -409,7 +430,7 @@ export default function EconomicDashboardCard() {
                     topProjectsByValue.map((project, index) => {
                       const metadata = project.metadata as ProjectMetadata;
                       const importoServizio = metadata?.importoServizio || 0;
-                      const percentage = (importoServizio / totalImportoServizi) * 100;
+                      const percentage = totalImportoServizi > 0 ? (importoServizio / totalImportoServizi) * 100 : 0;
 
                       return (
                         <div key={project.id} className="space-y-2">

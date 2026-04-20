@@ -108,6 +108,24 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    // Split del bundle per tenere i chunk sotto il warning threshold e
+    // migliorare il caching: un utente che torna a pagina dopo un deploy
+    // scarica solo il chunk dell'app, non le librerie pesanti.
+    chunkSizeWarningLimit: 700,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return undefined;
+          if (id.includes("recharts") || id.includes("d3-") || id.includes("victory-vendor")) return "vendor-charts";
+          if (id.includes("@radix-ui")) return "vendor-radix";
+          if (id.includes("react-hook-form") || id.includes("@hookform") || id.includes("zod")) return "vendor-forms";
+          if (id.includes("@tanstack")) return "vendor-query";
+          if (id.includes("react-dom") || id.includes("/react/") || id.includes("scheduler")) return "vendor-react";
+          if (id.includes("date-fns") || id.includes("lucide-react") || id.includes("class-variance-authority") || id.includes("clsx") || id.includes("tailwind-merge")) return "vendor-utils";
+          return "vendor";
+        },
+      },
+    },
   },
   server: {
     middlewareMode: false,

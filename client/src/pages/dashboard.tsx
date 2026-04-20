@@ -6,7 +6,8 @@ import RecentProjectsTable from "@/components/dashboard/recent-projects-table";
 import EconomicDashboardCard from "@/components/dashboard/economic-dashboard-card";
 import FattureScadenzaWidget from "@/components/dashboard/fatture-scadenza-widget";
 import CashFlowDashboard from "@/components/dashboard/cash-flow-dashboard";
-import NewProjectForm from "@/components/projects/new-project-form";
+import EntrateUsciteChart from "@/components/dashboard/entrate-uscite-chart";
+import IncassiManutenzioneChart from "@/components/dashboard/incassi-manutenzione-chart";
 import ProjectsTable from "@/components/projects/projects-table";
 import ClientsTable from "@/components/projects/clients-table";
 import ParcellaCalculator from "@/components/projects/parcella-calculator-new";
@@ -24,26 +25,63 @@ import CostiGenerali from "@/components/projects/costi-generali";
 import CentroCostoDashboard from "@/components/projects/centro-costo-dashboard";
 import StoragePanel from "@/components/system/storage-panel";
 import UsersManagement from "@/components/system/users-management";
-import ProfiliCostoManagement from "@/components/system/profili-costo-management";
+import CollaboratoriManagement from "@/components/system/collaboratori-management";
 import ActivityLogViewer from "@/components/system/activity-log-viewer";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { type Project } from "@shared/schema";
+import { BreadcrumbNav } from "@/components/ui/breadcrumb-nav";
 import { User } from "@/hooks/useAuth";
+import { useDocumentTitle } from "@/hooks/useDocumentTitle";
+
+// Etichetta leggibile per il <title> associata a ciascun tab principale
+const TAB_TITLES: Record<string, string> = {
+  dashboard: "Dashboard",
+  commesse: "Commesse",
+  economia: "Economia",
+  costi: "Costi",
+  operativita: "Operativit\u00e0",
+  anagrafica: "Anagrafica",
+  sistema: "Sistema",
+};
+
+// Etichette leggibili dei sub-tab per il breadcrumb
+const SUB_TAB_LABELS: Record<string, Record<string, string>> = {
+  economia: {
+    "fatture-emesse": "Fatture Emesse",
+    "fatture-ingresso": "Fatture in Ingresso",
+    "fatture-consulenti": "Fatture Consulenti",
+  },
+  costi: {
+    "costi-vivi": "Costi Vivi",
+    "costi-generali": "Costi Generali",
+  },
+  operativita: {
+    scadenze: "Scadenzario",
+    comunicazioni: "Comunicazioni",
+    risorse: "Gestione Risorse",
+    kpi: "KPI",
+    "centro-costo": "Centro di Costo",
+  },
+  anagrafica: {
+    clienti: "Clienti",
+    collaboratori: "Collaboratori",
+  },
+  sistema: {
+    storage: "Storage",
+    users: "Utenti",
+    "activity-log": "Activity Log",
+  },
+};
 
 interface DashboardProps {
   user: User | null;
   onLogout: () => void;
 }
 
-// Helper per verificare se l'utente è admin (supporta sia nuovo che vecchio schema)
-const isUserAdmin = (user: User | null) => {
-  return user?.role === "admin" || user?.role === "amministratore" as any;
-};
-
 export default function Dashboard({ user, onLogout }: DashboardProps) {
-  const isAdmin = isUserAdmin(user);
+  const isAdmin = user?.role === "amministratore";
 
   const [activeTab, setActiveTab] = useState("dashboard");
+  useDocumentTitle(TAB_TITLES[activeTab]);
   const [activeSubTab, setActiveSubTab] = useState({
     commesse: "lista",
     economia: "fatture-emesse",
@@ -52,8 +90,6 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
     anagrafica: "clienti",
     sistema: "storage",
   });
-  const [pendingProject, setPendingProject] = useState(null);
-
   const handleSubTabChange = (mainTab: string, subTab: string) => {
     setActiveSubTab(prev => ({ ...prev, [mainTab]: subTab }));
   };
@@ -73,6 +109,20 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
         />
 
         <main className="p-6">
+          {activeTab !== "dashboard" && (() => {
+            const mainLabel = TAB_TITLES[activeTab];
+            const sub = activeSubTab[activeTab as keyof typeof activeSubTab];
+            const subLabel = sub && SUB_TAB_LABELS[activeTab]?.[sub];
+            const items = [{ label: mainLabel, onClick: () => setActiveTab(activeTab) }];
+            if (subLabel) items.push({ label: subLabel, onClick: () => {} });
+            return (
+              <BreadcrumbNav
+                items={items}
+                onHomeClick={() => setActiveTab("dashboard")}
+                className="mb-4"
+              />
+            );
+          })()}
           <div className="animate-fade-in">
             {/* Dashboard Panel */}
             {activeTab === "dashboard" && (
@@ -86,6 +136,12 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
                   <CashFlowDashboard isAdmin={isAdmin} />
                 </div>
 
+                {/* Grafico Entrate/Uscite per cliente/fornitore */}
+                <EntrateUsciteChart isAdmin={isAdmin} />
+
+                {/* Grafico Incassi: Manutenzione vs Lavoro Professionale */}
+                <IncassiManutenzioneChart />
+
                 {/* Second Row - Recent Projects */}
                 <RecentProjectsTable />
 
@@ -98,33 +154,8 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
 
             {/* COMMESSE Panel */}
             {activeTab === "commesse" && (
-              <div data-testid="commesse-panel">
-                <Tabs value={activeSubTab.commesse} onValueChange={(value) => handleSubTabChange("commesse", value)}>
-                  <div className="bg-white rounded-t-2xl border-b border-gray-200 shadow-sm">
-                    <TabsList className="flex w-full bg-transparent border-0 p-0">
-                      <TabsTrigger value="lista" className={tabTriggerClass} data-testid="tab-lista">
-                        Lista Commesse
-                      </TabsTrigger>
-                      {isAdmin && (
-                        <TabsTrigger value="nuova" className={tabTriggerClass} data-testid="tab-nuova">
-                          + Nuova Commessa
-                        </TabsTrigger>
-                      )}
-                    </TabsList>
-                  </div>
-
-                  <TabsContent value="lista" className="bg-white rounded-b-2xl shadow-lg border border-t-0 border-gray-100 p-6 mt-0">
-                    <ProjectsTable />
-                  </TabsContent>
-
-                  {isAdmin && (
-                    <TabsContent value="nuova" className="bg-white rounded-b-2xl shadow-lg border border-t-0 border-gray-100 p-6 mt-0">
-                      <div className="max-w-2xl mx-auto space-y-6">
-                        <NewProjectForm onProjectSaved={setPendingProject} />
-                      </div>
-                    </TabsContent>
-                  )}
-                </Tabs>
+              <div data-testid="commesse-panel" className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
+                <ProjectsTable />
               </div>
             )}
 
@@ -133,7 +164,7 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
               <div data-testid="economia-panel">
                 <Tabs value={activeSubTab.economia} onValueChange={(value) => handleSubTabChange("economia", value)}>
                   <div className="bg-white rounded-t-2xl border-b border-gray-200 shadow-sm">
-                    <TabsList className="flex w-full bg-transparent border-0 p-0 overflow-x-auto">
+                    <TabsList className="flex w-full bg-transparent border-0 p-0 flex-wrap">
                       <TabsTrigger value="fatture-emesse" className={tabTriggerClass} data-testid="tab-fatture-emesse">
                         Fatture Emesse
                       </TabsTrigger>
@@ -233,6 +264,9 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
                       <TabsTrigger value="clienti" className={tabTriggerClass} data-testid="tab-clienti">
                         Anagrafica Clienti
                       </TabsTrigger>
+                      <TabsTrigger value="collaboratori" className={tabTriggerClass} data-testid="tab-collaboratori">
+                        Anagrafica Collaboratori
+                      </TabsTrigger>
                       <TabsTrigger value="parcella" className={tabTriggerClass} data-testid="tab-parcella">
                         Calcolo Parcella
                       </TabsTrigger>
@@ -241,6 +275,10 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
 
                   <TabsContent value="clienti" className="bg-white rounded-b-2xl shadow-lg border border-t-0 border-gray-100 p-6 mt-0">
                     <ClientsTable />
+                  </TabsContent>
+
+                  <TabsContent value="collaboratori" className="bg-white rounded-b-2xl shadow-lg border border-t-0 border-gray-100 p-6 mt-0">
+                    <CollaboratoriManagement />
                   </TabsContent>
 
                   <TabsContent value="parcella" className="bg-white rounded-b-2xl shadow-lg border border-t-0 border-gray-100 p-6 mt-0">
@@ -265,13 +303,10 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
                         </TabsTrigger>
                       )}
                       {isAdmin && (
-                        <TabsTrigger value="profili-costo" className={tabTriggerClass} data-testid="tab-profili-costo">
-                          Profili Costo
+                        <TabsTrigger value="activity-log" className={tabTriggerClass} data-testid="tab-activity-log">
+                          Log Attività
                         </TabsTrigger>
                       )}
-                      <TabsTrigger value="activity-log" className={tabTriggerClass} data-testid="tab-activity-log">
-                        Log Attività
-                      </TabsTrigger>
                     </TabsList>
                   </div>
 
@@ -286,14 +321,10 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
                   )}
 
                   {isAdmin && (
-                    <TabsContent value="profili-costo" className="bg-white rounded-b-2xl shadow-lg border border-t-0 border-gray-100 p-6 mt-0">
-                      <ProfiliCostoManagement />
+                    <TabsContent value="activity-log" className="bg-white rounded-b-2xl shadow-lg border border-t-0 border-gray-100 p-6 mt-0">
+                      <ActivityLogViewer showAll={true} />
                     </TabsContent>
                   )}
-
-                  <TabsContent value="activity-log" className="bg-white rounded-b-2xl shadow-lg border border-t-0 border-gray-100 p-6 mt-0">
-                    <ActivityLogViewer userId={isAdmin ? undefined : user?.id} showAll={isAdmin} />
-                  </TabsContent>
                 </Tabs>
               </div>
             )}

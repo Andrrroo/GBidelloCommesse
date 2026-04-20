@@ -7,25 +7,31 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
+import { DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { insertProjectSchema, type InsertProject, type Client } from "@shared/schema";
+import { insertProjectSchema, categoriaLavoroRefinement, CATEGORIE_LAVORO_PROFESSIONALE, type InsertProject, type Client } from "@shared/schema";
 import { TIPO_RAPPORTO_CONFIG, type TipoRapportoType } from "@/lib/prestazioni-utils";
-import { CheckCircle, Loader2, Save, Building2, MapPin, FileText, Mail, Phone } from "lucide-react";
+import { CheckCircle, Loader2, Save, Building2, MapPin, FileText, Mail, Phone, Hammer, Wrench } from "lucide-react";
 import { z } from "zod";
 
 const formSchema = insertProjectSchema.extend({
-  year: z.number().min(0).max(99),
+  year: z.number().min(2000).max(2099),
   clientId: z.string().optional(),
-});
+}).superRefine(categoriaLavoroRefinement);
 
 type FormData = z.infer<typeof formSchema>;
 
 interface NewProjectFormProps {
   onProjectSaved: (project: any) => void;
+  /** Callback opzionale chiamata quando l'utente annulla. In variant="dialog"
+   * il parent lo usa per chiudere la dialog. In variant="page" può non essere
+   * fornito: il bottone "Annulla" si limiterà a svuotare il form. */
+  onCancel?: () => void;
+  variant?: "page" | "dialog";
 }
 
-export default function NewProjectForm({ onProjectSaved }: NewProjectFormProps) {
+export default function NewProjectForm({ onProjectSaved, onCancel, variant = "page" }: NewProjectFormProps) {
   const [generatedCode, setGeneratedCode] = useState("");
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const { toast } = useToast();
@@ -42,17 +48,20 @@ export default function NewProjectForm({ onProjectSaved }: NewProjectFormProps) 
       client: "",
       city: "",
       object: "",
-      year: new Date().getFullYear() % 100,
+      year: new Date().getFullYear(),
       template: "LUNGO",
       status: "in_corso",
       tipoRapporto: "diretto",
       tipoIntervento: "professionale",
+      manutenzione: false,
+      categoriaLavoro: undefined,
       budget: undefined,
       committenteFinale: undefined,
       code: "",
       fsRoot: undefined,
       metadata: undefined,
       clientId: undefined,
+      createdAt: undefined,
     },
   });
 
@@ -141,9 +150,6 @@ export default function NewProjectForm({ onProjectSaved }: NewProjectFormProps) 
   };
 
   const onSubmit = (data: FormData) => {
-    console.log('Form data:', data);
-    console.log('Form errors:', form.formState.errors);
-
     if (!data.code) {
       toast({
         title: "Codice mancante",
@@ -153,11 +159,20 @@ export default function NewProjectForm({ onProjectSaved }: NewProjectFormProps) 
       return;
     }
 
-    createProjectMutation.mutate(data);
+    // Se l'utente ha indicato una data in formato yyyy-mm-dd dal date picker,
+    // la converto in ISO string con ora 12:00 (mezzogiorno locale) per evitare
+    // sfasamenti di fuso orario. Se il campo è vuoto, il backend imposta now().
+    const payload = { ...data };
+    if (payload.createdAt && /^\d{4}-\d{2}-\d{2}$/.test(payload.createdAt)) {
+      payload.createdAt = new Date(payload.createdAt + 'T12:00:00').toISOString();
+    } else if (!payload.createdAt) {
+      delete payload.createdAt;
+    }
+
+    createProjectMutation.mutate(payload);
   };
 
   const onError = (errors: any) => {
-    console.error('Form validation errors:', errors);
     const firstError = Object.values(errors)[0] as any;
     toast({
       title: "Errore di validazione",
@@ -166,23 +181,111 @@ export default function NewProjectForm({ onProjectSaved }: NewProjectFormProps) 
     });
   };
 
-  return (
-    <div className="card-g2" data-testid="new-project-form">
-      <h2 className="text-2xl font-bold text-gray-900 mb-6">Crea Nuova Commessa</h2>
+  const isManutenzione = form.watch("manutenzione");
 
-      <form className="space-y-6">
-        <div className="grid gap-6 md:grid-cols-2">
-          <div>
-            <Label className="block text-sm font-semibold text-gray-700 mb-2">
-              Cliente *
-            </Label>
+  const isDialog = variant === "dialog";
+  const wrapperClass = isDialog ? "" : "card-g2";
+
+  const handleCancel = () => {
+    form.reset();
+    setGeneratedCode("");
+    setSelectedClient(null);
+    // In modalità dialog, il parent passa onCancel per chiudere la dialog;
+    // in modalità page la dialog non esiste e il reset da solo è sufficiente.
+    onCancel?.();
+  };
+
+  return (
+    <div className={wrapperClass} data-testid="new-project-form">
+      {!isDialog && (
+        <h2 className="text-2xl font-bold text-gray-900 mb-6">Crea Nuova Commessa</h2>
+      )}
+
+      <form className="space-y-4">
+        {/* Tipologia commessa: manutenzione vs nuovo lavoro */}
+        <div className="space-y-2">
+          <Label>Tipologia di commessa *</Label>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => form.setValue("manutenzione", false)}
+              className={`p-3 rounded-md border-2 text-left transition-all ${
+                !isManutenzione
+                  ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
+                  : 'border-gray-200 hover:border-gray-300 bg-white'
+              }`}
+              data-testid="select-nuovo-lavoro"
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <Hammer className="h-4 w-4 text-gray-600" aria-hidden="true" />
+                <span className="font-medium text-sm">Lavoro Professionale</span>
+                {!isManutenzione && <CheckCircle className="w-4 h-4 text-blue-600 ml-auto" />}
+              </div>
+              <p className="text-xs text-gray-600">
+                Progettazione/realizzazione di una nuova opera
+              </p>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                form.setValue("manutenzione", true);
+                form.setValue("categoriaLavoro", undefined);
+              }}
+              className={`p-3 rounded-md border-2 text-left transition-all ${
+                isManutenzione
+                  ? 'border-orange-500 bg-orange-50 ring-2 ring-orange-200'
+                  : 'border-gray-200 hover:border-gray-300 bg-white'
+              }`}
+              data-testid="select-manutenzione"
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <Wrench className="h-4 w-4 text-gray-600" aria-hidden="true" />
+                <span className="font-medium text-sm">Manutenzione</span>
+                {isManutenzione && <CheckCircle className="w-4 h-4 text-orange-600 ml-auto" />}
+              </div>
+              <p className="text-xs text-gray-600">
+                Manutenzione, riparazione o intervento su opera esistente
+              </p>
+            </button>
+          </div>
+        </div>
+
+        {/* Categoria — obbligatoria solo per Lavoro Professionale */}
+        {!isManutenzione && (
+          <div className="space-y-2">
+            <Label htmlFor="categoriaLavoro">Categoria *</Label>
+            <Select
+              onValueChange={(value) => form.setValue("categoriaLavoro", value as typeof CATEGORIE_LAVORO_PROFESSIONALE[number], { shouldValidate: true })}
+              value={form.watch("categoriaLavoro") ?? ""}
+              data-testid="select-categoria-lavoro"
+            >
+              <SelectTrigger id="categoriaLavoro">
+                <SelectValue placeholder="Seleziona una categoria..." />
+              </SelectTrigger>
+              <SelectContent>
+                {CATEGORIE_LAVORO_PROFESSIONALE.map((cat) => (
+                  <SelectItem key={cat} value={cat}>
+                    {cat}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {form.formState.errors.categoriaLavoro && (
+              <p className="text-sm text-red-600">{form.formState.errors.categoriaLavoro.message}</p>
+            )}
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label htmlFor="client">Cliente *</Label>
             {clients.length > 0 ? (
               <Select
                 onValueChange={handleClientSelect}
                 value={selectedClient?.id || ""}
                 data-testid="select-client"
               >
-                <SelectTrigger className="input-g2">
+                <SelectTrigger id="client">
                   <SelectValue placeholder="Seleziona un cliente..." />
                 </SelectTrigger>
                 <SelectContent>
@@ -194,27 +297,24 @@ export default function NewProjectForm({ onProjectSaved }: NewProjectFormProps) 
                 </SelectContent>
               </Select>
             ) : (
-              <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-700">
+              <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-md text-sm text-yellow-700">
                 Nessun cliente presente. Vai in Anagrafica → Clienti per aggiungerne uno.
               </div>
             )}
             {form.formState.errors.client && (
-              <p className="text-sm text-red-600 mt-1">{form.formState.errors.client.message}</p>
+              <p className="text-sm text-red-600">{form.formState.errors.client.message}</p>
             )}
           </div>
-          <div>
-            <Label htmlFor="city" className="block text-sm font-semibold text-gray-700 mb-2">
-              Città *
-            </Label>
+          <div className="space-y-2">
+            <Label htmlFor="city">Città *</Label>
             <Input
               id="city"
               placeholder="Es. Milano"
-              className="input-g2"
               data-testid="input-city"
               {...form.register("city")}
             />
             {form.formState.errors.city && (
-              <p className="text-sm text-red-600 mt-1">{form.formState.errors.city.message}</p>
+              <p className="text-sm text-red-600">{form.formState.errors.city.message}</p>
             )}
           </div>
         </div>
@@ -222,35 +322,34 @@ export default function NewProjectForm({ onProjectSaved }: NewProjectFormProps) 
         {/* Card informazioni cliente selezionato */}
         {selectedClient && (
           <Card className="bg-blue-50 border-blue-200">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <Building2 className="w-5 h-5 text-blue-600" />
-                <h4 className="font-semibold text-blue-900">Informazioni Cliente</h4>
+            <CardContent className="p-3">
+              <div className="flex items-center gap-2 mb-2">
+                <Building2 className="w-4 h-4 text-blue-600" />
+                <h4 className="font-semibold text-blue-900 text-sm">Informazioni Cliente</h4>
               </div>
-              <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 text-sm">
-                <div className="flex items-center gap-2">
-                  <span className="text-gray-600">Ragione Sociale:</span>
-                  <span className="font-medium">{selectedClient.name}</span>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-gray-600">Rag. Sociale:</span>
+                  <span className="font-medium truncate">{selectedClient.name}</span>
                 </div>
                 {selectedClient.piva && (
-                  <div className="flex items-center gap-2">
-                    <FileText className="w-4 h-4 text-gray-500" />
+                  <div className="flex items-center gap-1.5">
+                    <FileText className="w-3.5 h-3.5 text-gray-500 shrink-0" />
                     <span className="text-gray-600">P. IVA:</span>
                     <span className="font-medium">{selectedClient.piva}</span>
                   </div>
                 )}
                 {selectedClient.cf && (
-                  <div className="flex items-center gap-2">
-                    <FileText className="w-4 h-4 text-gray-500" />
+                  <div className="flex items-center gap-1.5">
+                    <FileText className="w-3.5 h-3.5 text-gray-500 shrink-0" />
                     <span className="text-gray-600">C.F.:</span>
                     <span className="font-medium">{selectedClient.cf}</span>
                   </div>
                 )}
                 {selectedClient.address && (
-                  <div className="flex items-center gap-2">
-                    <MapPin className="w-4 h-4 text-gray-500" />
-                    <span className="text-gray-600">Indirizzo:</span>
-                    <span className="font-medium">
+                  <div className="flex items-center gap-1.5 col-span-2">
+                    <MapPin className="w-3.5 h-3.5 text-gray-500 shrink-0" />
+                    <span className="font-medium truncate">
                       {selectedClient.address}
                       {selectedClient.cap && `, ${selectedClient.cap}`}
                       {selectedClient.city && ` ${selectedClient.city}`}
@@ -259,23 +358,14 @@ export default function NewProjectForm({ onProjectSaved }: NewProjectFormProps) 
                   </div>
                 )}
                 {selectedClient.email && (
-                  <div className="flex items-center gap-2">
-                    <Mail className="w-4 h-4 text-gray-500" />
-                    <span className="text-gray-600">Email:</span>
-                    <span className="font-medium">{selectedClient.email}</span>
-                  </div>
-                )}
-                {selectedClient.pec && (
-                  <div className="flex items-center gap-2">
-                    <Mail className="w-4 h-4 text-gray-500" />
-                    <span className="text-gray-600">PEC:</span>
-                    <span className="font-medium">{selectedClient.pec}</span>
+                  <div className="flex items-center gap-1.5">
+                    <Mail className="w-3.5 h-3.5 text-gray-500 shrink-0" />
+                    <span className="font-medium truncate">{selectedClient.email}</span>
                   </div>
                 )}
                 {selectedClient.phone && (
-                  <div className="flex items-center gap-2">
-                    <Phone className="w-4 h-4 text-gray-500" />
-                    <span className="text-gray-600">Tel:</span>
+                  <div className="flex items-center gap-1.5">
+                    <Phone className="w-3.5 h-3.5 text-gray-500 shrink-0" />
                     <span className="font-medium">{selectedClient.phone}</span>
                   </div>
                 )}
@@ -284,100 +374,99 @@ export default function NewProjectForm({ onProjectSaved }: NewProjectFormProps) 
           </Card>
         )}
 
-        {/* Nuova sezione: Tipo Rapporto Committenza */}
-        <div className="grid gap-6 md:grid-cols-2">
-          <div>
-            <Label className="block text-sm font-semibold text-gray-700 mb-2">
-              Tipo Rapporto *
-              <span className="ml-1 text-xs text-gray-500 font-normal">Chi commissiona a G2?</span>
-            </Label>
-            <Select
-              onValueChange={(value) => form.setValue("tipoRapporto", value as TipoRapportoType)}
-              defaultValue={form.getValues("tipoRapporto")}
-              data-testid="select-tipo-rapporto"
-            >
-              <SelectTrigger className="input-g2">
-                <SelectValue placeholder="Seleziona tipo rapporto..." />
-              </SelectTrigger>
-              <SelectContent>
-                {Object.entries(TIPO_RAPPORTO_CONFIG).map(([key, config]) => (
+        <div className="space-y-2">
+          <Label htmlFor="tipoRapporto">Tipo Rapporto *</Label>
+          <Select
+            onValueChange={(value) => form.setValue("tipoRapporto", value as TipoRapportoType)}
+            defaultValue={form.getValues("tipoRapporto")}
+            data-testid="select-tipo-rapporto"
+          >
+            <SelectTrigger id="tipoRapporto">
+              <SelectValue placeholder="Seleziona tipo rapporto..." />
+            </SelectTrigger>
+            <SelectContent>
+              {Object.entries(TIPO_RAPPORTO_CONFIG).map(([key, config]) => {
+                const Icon = config.Icon;
+                return (
                   <SelectItem key={key} value={key}>
-                    {config.icon} {config.label} - {config.description}
+                    <span className="inline-flex items-center gap-2">
+                      <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+                      {config.label} — {config.description}
+                    </span>
                   </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {form.formState.errors.tipoRapporto && (
-              <p className="text-sm text-red-600 mt-1">{form.formState.errors.tipoRapporto.message}</p>
-            )}
-          </div>
+                );
+              })}
+            </SelectContent>
+          </Select>
+          {form.formState.errors.tipoRapporto && (
+            <p className="text-sm text-red-600">{form.formState.errors.tipoRapporto.message}</p>
+          )}
         </div>
 
         {/* Campo Committente Finale - visibile solo se tipo != diretto */}
         {form.watch("tipoRapporto") && form.watch("tipoRapporto") !== "diretto" && (
-          <div>
-            <Label htmlFor="committente-finale" className="block text-sm font-semibold text-gray-700 mb-2">
-              Committente Finale
-              <span className="ml-1 text-xs text-gray-500 font-normal">Proprietario/Ente finale dell'opera</span>
-            </Label>
+          <div className="space-y-2">
+            <Label htmlFor="committente-finale">Committente Finale</Label>
             <Input
               id="committente-finale"
               placeholder="Es. Comune di Roma, Privato, etc."
-              className="input-g2"
               data-testid="input-committente-finale"
               {...form.register("committenteFinale")}
             />
             {form.formState.errors.committenteFinale && (
-              <p className="text-sm text-red-600 mt-1">{form.formState.errors.committenteFinale.message}</p>
+              <p className="text-sm text-red-600">{form.formState.errors.committenteFinale.message}</p>
             )}
           </div>
         )}
 
-        <div>
-          <Label htmlFor="object" className="block text-sm font-semibold text-gray-700 mb-2">
-            Oggetto Commessa *
-          </Label>
+        <div className="space-y-2">
+          <Label htmlFor="object">Oggetto Commessa *</Label>
           <Input
             id="object"
             placeholder="Descrizione sintetica del progetto"
-            className="input-g2"
             data-testid="input-object"
             {...form.register("object")}
           />
           {form.formState.errors.object && (
-            <p className="text-sm text-red-600 mt-1">{form.formState.errors.object.message}</p>
+            <p className="text-sm text-red-600">{form.formState.errors.object.message}</p>
           )}
         </div>
 
-        <div className="grid gap-6 md:grid-cols-2">
-          <div>
-            <Label htmlFor="year" className="block text-sm font-semibold text-gray-700 mb-2">
-              Anno (AA) *
-            </Label>
+        <div className="grid grid-cols-3 gap-4">
+          <div className="space-y-2">
+            <Label htmlFor="year">Anno *</Label>
             <Input
               id="year"
               type="number"
-              min="0"
-              max="99"
-              placeholder="24"
-              className="input-g2"
+              min="2000"
+              max="2099"
+              placeholder="2025"
               data-testid="input-year"
               {...form.register("year", { valueAsNumber: true })}
             />
             {form.formState.errors.year && (
-              <p className="text-sm text-red-600 mt-1">{form.formState.errors.year.message}</p>
+              <p className="text-sm text-red-600">{form.formState.errors.year.message}</p>
             )}
           </div>
-          <div>
-            <Label className="block text-sm font-semibold text-gray-700 mb-2">
-              Template Progetto *
-            </Label>
+          <div className="space-y-2">
+            <Label htmlFor="createdAt">Data di creazione</Label>
+            <Input
+              id="createdAt"
+              type="date"
+              max={new Date().toISOString().slice(0, 10)}
+              placeholder="Oggi"
+              data-testid="input-createdAt"
+              {...form.register("createdAt")}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="template">Template *</Label>
             <Select
-              onValueChange={(value) => form.setValue("template", value)}
+              onValueChange={(value) => form.setValue("template", value as "LUNGO" | "BREVE")}
               defaultValue={form.getValues("template")}
               data-testid="select-template"
             >
-              <SelectTrigger className="input-g2">
+              <SelectTrigger id="template">
                 <SelectValue placeholder="Seleziona template..." />
               </SelectTrigger>
               <SelectContent>
@@ -386,141 +475,114 @@ export default function NewProjectForm({ onProjectSaved }: NewProjectFormProps) 
               </SelectContent>
             </Select>
           </div>
-          <div>
-            <Label className="block text-sm font-semibold text-gray-700 mb-2">
-              Stato Commessa *
-            </Label>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label htmlFor="status">Stato *</Label>
             <Select
-              onValueChange={(value) => form.setValue("status", value)}
+              onValueChange={(value) => form.setValue("status", value as "in_corso" | "conclusa" | "sospesa")}
               defaultValue={form.getValues("status")}
               data-testid="select-status"
             >
-              <SelectTrigger className="input-g2">
+              <SelectTrigger id="status">
                 <SelectValue placeholder="Seleziona stato..." />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="in_corso">🟡 In Corso</SelectItem>
-                <SelectItem value="conclusa">🟢 Conclusa</SelectItem>
-                <SelectItem value="sospesa">🔴 Sospesa</SelectItem>
+                <SelectItem value="in_corso">In Corso</SelectItem>
+                <SelectItem value="conclusa">Conclusa</SelectItem>
+                <SelectItem value="sospesa">Sospesa</SelectItem>
               </SelectContent>
             </Select>
           </div>
-        </div>
-
-        {/* Nuova sezione: Tipologia Intervento e Budget */}
-        <div className="grid gap-6 md:grid-cols-2">
-          <div>
-            <Label className="block text-sm font-semibold text-gray-700 mb-2">
-              Tipologia Intervento *
-            </Label>
+          <div className="space-y-2">
+            <Label htmlFor="tipoIntervento">Tipologia Intervento *</Label>
             <Select
               onValueChange={(value) => form.setValue("tipoIntervento", value as "professionale" | "realizzativo")}
               defaultValue={form.getValues("tipoIntervento")}
               data-testid="select-tipo-intervento"
             >
-              <SelectTrigger className="input-g2">
+              <SelectTrigger id="tipoIntervento">
                 <SelectValue placeholder="Seleziona tipologia..." />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="professionale">📋 Professionale - Consulenza, progettazione</SelectItem>
-                <SelectItem value="realizzativo">🏗️ Realizzativo - Lavori, costruzione</SelectItem>
+                <SelectItem value="professionale">Professionale</SelectItem>
+                <SelectItem value="realizzativo">Realizzativo</SelectItem>
               </SelectContent>
             </Select>
-            <p className="text-xs text-gray-500 mt-1">
-              Professionale: solo servizi. Realizzativo: include lavori/opere.
-            </p>
-          </div>
-          <div>
-            <Label htmlFor="budget" className="block text-sm font-semibold text-gray-700 mb-2">
-              Budget Iniziale
-              <span className="ml-1 text-xs text-gray-500 font-normal">(opzionale)</span>
-            </Label>
-            <Input
-              id="budget"
-              type="number"
-              min="0"
-              step="0.01"
-              placeholder="Es. 50000.00"
-              className="input-g2"
-              data-testid="input-budget"
-              {...form.register("budget", {
-                valueAsNumber: true,
-                setValueAs: (v) => v === '' ? undefined : parseFloat(v)
-              })}
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              Budget preventivato per la commessa (in euro)
-            </p>
           </div>
         </div>
 
-        <div>
-          <Label className="block text-sm font-semibold text-gray-700 mb-2">
-            Codice Commessa
-          </Label>
-          <div className="flex gap-3">
+        <div className="space-y-2">
+          <Label htmlFor="budget">Importo Concordato</Label>
+          <Input
+            id="budget"
+            type="number"
+            min="0"
+            step="100"
+            placeholder="Es. 50000.00 (opzionale)"
+            data-testid="input-budget"
+            {...form.register("budget", {
+              setValueAs: (v) => v === '' || v === undefined ? undefined : Number(v)
+            })}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="code">Codice Commessa</Label>
+          <div className="flex gap-2">
             <Input
+              id="code"
               readOnly
               placeholder="Generato automaticamente..."
-              className="flex-1 input-g2 bg-gray-50 text-gray-600 font-mono"
+              className="flex-1 bg-gray-50 text-gray-600 font-mono"
               data-testid="input-generated-code"
               {...form.register("code")}
             />
             <Button
               type="button"
+              variant="outline"
               onClick={handleGenerateCode}
               disabled={generateCodeMutation.isPending || !selectedClient}
-              className="button-g2-primary"
               data-testid="button-generate-code"
             >
               {generateCodeMutation.isPending ? "Generando..." : "Genera"}
             </Button>
           </div>
           {!selectedClient && (
-            <p className="text-xs text-amber-600 mt-1">Seleziona prima un cliente per generare il codice</p>
+            <p className="text-xs text-amber-600">Seleziona prima un cliente per generare il codice</p>
           )}
         </div>
 
-        <div className="border-t pt-6">
-          <div className="flex flex-wrap gap-3">
-            {/* Create Project Button */}
-            <Button
-              type="button"
-              onClick={form.handleSubmit(onSubmit, onError)}
-              disabled={createProjectMutation.isPending || !form.watch("code") || !selectedClient}
-              className="px-8 py-3 bg-g2-success text-white rounded-xl font-semibold hover:bg-green-700 transition-colors disabled:opacity-50"
-              data-testid="button-save-project"
-            >
-              {createProjectMutation.isPending ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Creando...
-                </>
-              ) : (
-                <>
-                  <Save className="w-4 h-4 mr-2" />
-                  Crea Commessa
-                </>
-              )}
-            </Button>
-
-            {/* Reset Button */}
-            <Button
-              type="reset"
-              variant="outline"
-              disabled={createProjectMutation.isPending}
-              onClick={() => {
-                form.reset();
-                setGeneratedCode("");
-                setSelectedClient(null);
-              }}
-              className="px-8 py-3 border-2 border-gray-300 text-gray-700 rounded-xl font-semibold hover:bg-gray-50 transition-colors disabled:opacity-50"
-              data-testid="button-reset-form"
-            >
-              Cancella
-            </Button>
-          </div>
-        </div>
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={createProjectMutation.isPending}
+            onClick={handleCancel}
+            data-testid="button-cancel-form"
+          >
+            Annulla
+          </Button>
+          <Button
+            type="button"
+            onClick={form.handleSubmit(onSubmit, onError)}
+            disabled={createProjectMutation.isPending || !form.watch("code") || !selectedClient}
+            data-testid="button-save-project"
+          >
+            {createProjectMutation.isPending ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Creando...
+              </>
+            ) : (
+              <>
+                <Save className="w-4 h-4 mr-2" />
+                Crea Commessa
+              </>
+            )}
+          </Button>
+        </DialogFooter>
       </form>
     </div>
   );

@@ -18,16 +18,15 @@ export default function Header({ user, onLogout }: HeaderProps) {
     await onLogout();
   };
 
-  // Supporto per vecchi e nuovi ruoli
-  const isAdmin = user?.role === "admin" || user?.role === "amministratore" as any;
+  const isAdmin = user?.role === "amministratore";
 
   const getRoleLabel = (role: string) => {
-    if (role === "admin" || role === "amministratore") return "Admin";
+    if (role === "amministratore") return "Admin";
     return "Operativo";
   };
 
   const getRoleBadgeColor = (role: string) => {
-    if (role === "admin" || role === "amministratore") {
+    if (role === "amministratore") {
       return "bg-red-100 text-red-800 border-red-300";
     }
     return "bg-blue-100 text-blue-800 border-blue-300";
@@ -40,13 +39,13 @@ export default function Header({ user, onLogout }: HeaderProps) {
           <div className="flex items-center gap-4">
             <img
               src={logoUrl}
-              alt="Gbidello Engineering & Partners Logo"
+              alt="GB Engineering Logo"
               className="w-12 h-12 rounded-xl shadow-lg object-contain"
               data-testid="brand-logo"
             />
             <div>
               <h1 className="text-xl font-bold text-primary tracking-tight" data-testid="brand-title">
-                Gbidello Engineering & Partners
+                GB Engineering
               </h1>
               <p className="text-sm text-gray-500" data-testid="brand-subtitle">
                 Sistema Gestione Commesse
