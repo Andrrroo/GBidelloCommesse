@@ -5,7 +5,7 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const inputImage = path.join(__dirname, '../client/public/logo_gb_1.jpg');
+const inputImage = path.join(__dirname, '../client/public/logo_gb_1.png');
 const outputDir = path.join(__dirname, '../client/public');
 
 const sizes = [
