@@ -8,7 +8,6 @@ import {
   Plus,
   Pencil,
   Trash2,
-  LogIn,
   FileText,
   Euro,
   User,
@@ -26,7 +25,6 @@ const ACTION_ICONS: Record<string, React.ReactNode> = {
   create: <Plus className="h-4 w-4 text-green-500" />,
   update: <Pencil className="h-4 w-4 text-blue-500" />,
   delete: <Trash2 className="h-4 w-4 text-red-500" />,
-  login: <LogIn className="h-4 w-4 text-purple-500" />,
   view: <FileText className="h-4 w-4 text-gray-500" />,
   payment: <Euro className="h-4 w-4 text-yellow-500" />
 };
@@ -88,7 +86,6 @@ export default function ActivityLogViewer({ userId, showAll = false, maxItems = 
       case 'create': return 'ha creato';
       case 'update': return 'ha modificato';
       case 'delete': return 'ha eliminato';
-      case 'login': return 'ha effettuato accesso';
       case 'view': return 'ha visualizzato';
       case 'payment': return 'ha registrato pagamento';
       default: return action;

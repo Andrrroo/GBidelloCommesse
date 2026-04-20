@@ -29,7 +29,15 @@ interface PurgeResult {
 }
 
 export async function purgeActivityLogs(): Promise<PurgeResult> {
-  const all = await activityLogsStorage.readAll();
+  // Se il file activity-logs.json e' corrotto/illeggibile, la retention non
+  // deve far crashare il server: loggiamo e ritorniamo uno stato "neutro".
+  let all: Awaited<ReturnType<typeof activityLogsStorage.readAll>>;
+  try {
+    all = await activityLogsStorage.readAll();
+  } catch (err) {
+    logger.error('Activity log: readAll fallito, retention saltata', { err });
+    return { before: 0, after: 0, removed: 0, removedLoginLegacy: 0, removedByAge: 0, removedByCap: 0 };
+  }
   const totalBefore = all.length;
   const cutoffMs = Date.now() - MAX_ACTIVITY_AGE_DAYS * 24 * 60 * 60 * 1000;
 

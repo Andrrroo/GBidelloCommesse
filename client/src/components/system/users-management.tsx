@@ -282,8 +282,8 @@ export default function UsersManagement() {
                         {isEditingSelf
                           ? "Non puoi cambiare il ruolo del tuo account"
                           : formData.role === "amministratore"
-                            ? "Accesso completo al sistema"
-                            : "Accesso limitato, senza gestione fatture in ingresso"}
+                            ? "Accesso completo: anagrafica clienti/utenti/collaboratori, cash-flow, import/export, activity log."
+                            : "Accesso operativo: commesse, fatture, costi (no anagrafica clienti/utenti, no cash-flow, no activity log)."}
                       </p>
                     </>
                   );
