@@ -924,20 +924,18 @@ export default function ProjectsTable() {
                         >
                           <FileText className="h-4 w-4" aria-hidden="true" />
                         </Button>
-                        {isAdmin && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleDeleteProject(project)}
-                            disabled={deleteProjectMutation.isPending}
-                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                            title="Elimina"
-                            aria-label="Elimina commessa"
-                            data-testid={`delete-project-${project.id}`}
-                          >
-                            <Trash2 className="h-4 w-4" aria-hidden="true" />
-                          </Button>
-                        )}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleDeleteProject(project)}
+                          disabled={deleteProjectMutation.isPending}
+                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          title="Elimina"
+                          aria-label="Elimina commessa"
+                          data-testid={`delete-project-${project.id}`}
+                        >
+                          <Trash2 className="h-4 w-4" aria-hidden="true" />
+                        </Button>
                       </div>
                     </td>
                   </tr>

@@ -159,8 +159,8 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
               </div>
             )}
 
-            {/* ECONOMIA Panel - Solo Admin */}
-            {activeTab === "economia" && isAdmin && (
+            {/* ECONOMIA Panel — accessibile a tutti (fatture/costi/centro costo/KPI) */}
+            {activeTab === "economia" && (
               <div data-testid="economia-panel">
                 <Tabs value={activeSubTab.economia} onValueChange={(value) => handleSubTabChange("economia", value)}>
                   <div className="bg-white rounded-t-2xl border-b border-gray-200 shadow-sm">

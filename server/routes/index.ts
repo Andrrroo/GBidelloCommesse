@@ -46,28 +46,16 @@ router.use('/api/users', (req: Request, res: Response, next: NextFunction) => {
   return requireAdmin(req, res, next);
 });
 
-// Route admin-only per fatture emesse, consulenti e profili costo (scrittura)
-router.use('/api/fatture-emesse', (req: Request, res: Response, next: NextFunction) => {
-  if (req.method !== 'GET') return requireAdmin(req, res, next);
-  next();
-});
-router.use('/api/fatture-consulenti', (req: Request, res: Response, next: NextFunction) => {
-  if (req.method !== 'GET') return requireAdmin(req, res, next);
-  next();
-});
+// Collaboratori anagrafica: scrittura solo admin (il costoOrario è stipendio
+// sensibile). GET sanitizza costoOrario per non-admin via collaboratori.ts.
 router.use('/api/collaboratori', (req: Request, res: Response, next: NextFunction) => {
   if (req.method !== 'GET') return requireAdmin(req, res, next);
   next();
 });
 
-// Dati finanziari aziendali: saldo, previsioni, dettaglio costi generali
-// → solo admin. Le route dashboard restanti (fatture-in-scadenza,
-// pagamenti-collaboratori-pendenti) filtrano internamente per ruolo.
+// Dati finanziari aziendali aggregati (saldo, previsioni, cash flow globale)
+// → solo admin.
 router.use('/api/cash-flow', requireAdmin);
-
-// Costi generali (affitti, utenze, abbonamenti aziendali) — coerente con
-// la UI che è nella tab "Economia" già admin-only.
-router.use('/api/costi-generali', requireAdmin);
 
 // Anagrafica clienti: scrittura solo admin (coerente con tab "Anagrafica"
 // admin-only UI). GET resta aperto perché usato da progetti e dashboard.
@@ -76,13 +64,10 @@ router.use('/api/clients', (req: Request, res: Response, next: NextFunction) => 
   next();
 });
 
-// Commesse: i collaboratori possono creare/aggiornare, ma solo admin
-// può eliminare una commessa (azione distruttiva a cascata).
-router.use('/api/projects', (req: Request, res: Response, next: NextFunction) => {
-  // Gate DELETE solo sulla route /:id (non confondere con sotto-route GET/PUT)
-  if (req.method === 'DELETE') return requireAdmin(req, res, next);
-  next();
-});
+// Fatture (emesse, ingresso, consulenti), costi generali, commesse CRUD:
+// aperti ai collaboratori per l'uso quotidiano (è il loro lavoro registrare
+// fatture, costi e commesse). I dati "compromettenti" rimangono gated via
+// Cash Flow, Anagrafica clienti/collaboratori, Users, Activity Log.
 
 // Route admin-only per export/import
 router.use('/api/export', requireAdmin);

@@ -8,7 +8,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Loader2, Shield } from "lucide-react";
-import { apiRequest } from "@/lib/queryClient";
 import { useDocumentTitle } from "@/hooks/useDocumentTitle";
 
 const loginSchema = z.object({
@@ -42,16 +41,38 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
     setError(null);
 
     try {
-      const response = await apiRequest("POST", "/api/auth/login", data);
-      const result = await response.json();
+      // Uso fetch diretto invece di apiRequest perché quest'ultimo fa throw su
+      // qualsiasi status non-2xx (incluso 401 "credenziali non valide") e il
+      // catch sotto mostrerebbe "Errore di connessione al server" per ogni
+      // errore, nascondendo il vero motivo. Qui gestiamo esplicitamente ogni
+      // caso (401/429/500/network) per un feedback preciso all'utente.
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+        credentials: "include",
+      });
 
-      if (result.success && result.user) {
+      let result: { success?: boolean; user?: User; error?: string; message?: string } | null = null;
+      try { result = await response.json(); } catch { /* body non JSON */ }
+
+      if (response.ok && result?.success && result?.user) {
         onLoginSuccess(result.user);
+        return;
+      }
+
+      if (response.status === 429) {
+        setError("Troppi tentativi di accesso. Riprova tra qualche minuto.");
+      } else if (response.status === 401) {
+        setError(result?.error || "Credenziali non valide");
+      } else if (result?.error || result?.message) {
+        setError(result.error || result.message || "Errore durante il login");
       } else {
-        setError(result.message || "Errore durante il login");
+        setError(`Errore durante il login (${response.status})`);
       }
     } catch (err) {
-      console.error("Login error:", err);
+      // Solo i veri errori di rete (server offline, DNS, CORS) arrivano qui.
+      console.error("Login network error:", err);
       setError("Errore di connessione al server");
     } finally {
       setIsLoading(false);

@@ -127,20 +127,6 @@ export default defineConfig({
       },
     },
   },
-  server: {
-    middlewareMode: false,
-    allowedHosts: true,
-    host: "0.0.0.0",
-    port: 5000,
-    proxy: {
-      "/api": {
-        target: "http://localhost:3000",
-        changeOrigin: true,
-      },
-    },
-    fs: {
-      strict: true,
-      deny: ["**/.*"],
-    },
-  },
+  // Niente `server.proxy` ne' `server.port`: in dev Vite e' montato come
+  // middleware dentro Express (vedi server/index.ts) su un'unica porta.
 });

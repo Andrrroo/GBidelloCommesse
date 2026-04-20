@@ -66,7 +66,16 @@ export const queryClient = new QueryClient({
       refetchInterval: false,
       refetchOnWindowFocus: true,
       staleTime: 30 * 1000,
-      retry: false,
+      // Retry intelligente: fino a 2 tentativi SOLO per errori 5xx transitori
+      // (tipici del proxy Vite al boot o riavvio server). Per 4xx/client
+      // errors non riproviamo — un 401 non deve ciclare infinitamente.
+      retry: (failureCount, error: unknown) => {
+        if (failureCount >= 2) return false;
+        const msg = String((error as Error)?.message || "");
+        // Pattern: "502: ...", "503: ...", "504: ..."
+        return /^(?:5\d\d|Failed to fetch|NetworkError)/.test(msg);
+      },
+      retryDelay: (attemptIndex) => Math.min(500 * 2 ** attemptIndex, 3000),
     },
     mutations: {
       retry: false,

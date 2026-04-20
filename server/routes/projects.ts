@@ -333,23 +333,9 @@ projectsRouter.get('/api/projects/:id/summary', async (req, res) => {
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value);
 
-    // Un non-admin vede solo entrate e costi "operativi" (fatture ingresso,
-    // costi vivi — già accessibili ovunque), senza margine, consulenti,
-    // manodopera o breakdown dettagliato delle uscite.
-    const isAdmin = req.session?.user?.role === 'amministratore';
-    if (!isAdmin) {
-      res.json({
-        fattureEmesse: { count: fattureEmesse.length, totale: totaleEmesso, incassato: totaleIncassato },
-        costi: {
-          fattureIngresso: { count: fattureIngresso.length, totale: totaleFattureIngresso },
-          costiVivi: { count: costiVivi.length, totale: totaleCostiVivi },
-        },
-        timeline,
-        entrateBreakdown,
-      });
-      return;
-    }
-
+    // Riepilogo completo per tutti gli utenti autenticati (i collaboratori
+    // gestiscono fatture/costi/commesse quindi hanno accesso al bilancio
+    // economico della singola commessa).
     res.json({
       fattureEmesse: { count: fattureEmesse.length, totale: totaleEmesso, incassato: totaleIncassato },
       costi: {

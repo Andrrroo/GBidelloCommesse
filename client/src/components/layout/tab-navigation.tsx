@@ -26,7 +26,7 @@ export default function TabNavigation({ activeTab, onTabChange, isAdmin }: TabNa
   const tabs: TabConfig[] = [
     { id: "dashboard",   label: "Dashboard",    icon: Home },
     { id: "commesse",    label: "Commesse",     icon: FolderOpen },
-    { id: "economia",    label: "Economia",     icon: Wallet, adminOnly: true },
+    { id: "economia",    label: "Economia",     icon: Wallet },
     { id: "costi",       label: "Costi",        icon: BarChart3 },
     { id: "operativita", label: "Operatività",  icon: ClipboardList },
     { id: "anagrafica",  label: "Anagrafica",   icon: Users, adminOnly: true },

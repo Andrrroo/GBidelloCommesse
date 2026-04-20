@@ -17,6 +17,9 @@ vite.config.ts.*
 # Temporary files
 nul
 
+# File scritto a runtime dal server dev con la porta effettiva (vedi vite.config.ts)
+.dev-port
+
 # Dati reali dell'applicazione (clienti, fatture, utenti, password hash)
 # NON vanno mai committati, neppure in un repo privato.
 data/
