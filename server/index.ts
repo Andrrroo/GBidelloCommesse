@@ -2,6 +2,7 @@ import express, { type Request, Response, NextFunction } from 'express';
 import session from 'express-session';
 import helmet from 'helmet';
 import { createServer as createNetServer } from 'net';
+import { spawnSync } from 'child_process';
 import os from 'os';
 import { router } from './routes/index.js';
 import { logger } from './lib/logger.js';
@@ -115,6 +116,11 @@ app.use(session({
 // API Routes
 app.use(router);
 
+// Riferimenti a scope modulo cosi' lo shutdown handler puo' chiudere
+// httpServer e il middleware Vite in modo pulito.
+let httpServer: import('http').Server | undefined;
+let viteDevServer: import('vite').ViteDevServer | undefined;
+
 async function start() {
   // Servire il frontend:
   //  - dev:  Vite montato come middleware (HMR + trasformazione on-the-fly).
@@ -132,6 +138,7 @@ async function start() {
       server: { middlewareMode: true, hmr: true },
       appType: 'custom',
     });
+    viteDevServer = vite;
     app.use(vite.middlewares);
     // SPA fallback: per ogni URL non /api e non statico, serve index.html
     // dopo averla passata per le trasformazioni di Vite (injecta HMR client).
@@ -168,7 +175,7 @@ async function start() {
   });
 
   const port = await findAvailablePort(BASE_PORT);
-  const httpServer = app.listen(port, '0.0.0.0', async () => {
+  httpServer = app.listen(port, '0.0.0.0', async () => {
     // process.uptime() misura i secondi dall'avvio del processo Node.
     const readyMs = Math.round(process.uptime() * 1000);
     if (port !== BASE_PORT) {
@@ -206,8 +213,8 @@ async function start() {
     scheduleActivityRetention(24);
   });
 
-  httpServer.keepAliveTimeout = 60_000;
-  httpServer.headersTimeout = 65_000;
+  httpServer!.keepAliveTimeout = 60_000;
+  httpServer!.headersTimeout = 65_000;
 }
 
 start().catch((err) => {
@@ -227,5 +234,97 @@ process.on('uncaughtException', (err) => {
   logger.error('Uncaught Exception', { err });
   console.error('\n[UNCAUGHT EXCEPTION]', err);
 });
+
+// Shutdown pulito su Ctrl+C (SIGINT) e su SIGTERM (kill/container stop).
+// Senza questi handler, su Windows npm.cmd intercetta Ctrl+C e non
+// propaga sempre il segnale al processo node figlio: il backend resta
+// in ascolto sulla porta e il sito continua a rispondere.
+// Helper: race tra una promise e un timeout. Se il close() di Vite o
+// dell'httpServer si blocca (es. WebSocket HMR in stato incoerente),
+// il timeout scade e proseguiamo invece di hangare.
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const t = setTimeout(() => {
+      console.error(`  [shutdown] timeout ${ms}ms su ${label}, proseguo.`);
+      resolve();
+    }, ms);
+    promise.then(() => { clearTimeout(t); resolve(); })
+           .catch((err) => {
+             clearTimeout(t);
+             console.error(`  [shutdown] errore su ${label}:`, err?.message || err);
+             resolve();
+           });
+  });
+}
+
+// Kill immediato a livello OS. Su Windows usiamo `taskkill /F /T /PID` che
+// termina l'intero albero di processi (incluso il worker di tsx, se
+// presente): ecco perche' non basta process.exit() da solo quando il
+// server resta "appeso" dopo Ctrl+C — qualcuno nell'albero rimane vivo.
+// /F = forza, /T = include tutti i discendenti.
+function hardKill(code: number = 1): never {
+  if (process.platform === 'win32') {
+    try {
+      spawnSync('taskkill', ['/F', '/T', '/PID', String(process.pid)], { stdio: 'ignore' });
+    } catch { /* fallthrough */ }
+  }
+  try { process.kill(process.pid, 'SIGKILL'); } catch { /* fallthrough */ }
+  process.exit(code);
+}
+
+let shuttingDown = false;
+const shutdown = async (signal: string) => {
+  if (shuttingDown) {
+    // Secondo signal durante shutdown: l'utente vuole uscire subito.
+    console.log(`\n  ${signal} ripetuto — kill immediato.`);
+    hardKill(1);
+  }
+  shuttingDown = true;
+  console.log(`\n  ${signal} ricevuto, chiusura server...`);
+
+  // Garanzia di uscita entro 1.5s anche se tutto il resto hanga.
+  // Ref'd (senza .unref()) per assicurare il trigger in ogni caso.
+  const forceExit = setTimeout(() => {
+    console.error('  [shutdown] timeout 1.5s — kill forzato (SIGKILL).');
+    hardKill(1);
+  }, 1500);
+
+  try {
+    if (httpServer) {
+      httpServer.closeAllConnections?.();
+      await withTimeout(
+        new Promise<void>((resolve) => httpServer!.close(() => resolve())),
+        400,
+        'httpServer.close'
+      );
+      console.log('  [shutdown] httpServer chiuso.');
+    }
+    if (viteDevServer) {
+      await withTimeout(viteDevServer.close(), 400, 'vite.close');
+      console.log('  [shutdown] vite chiuso.');
+    }
+  } catch (err) {
+    console.error('  [shutdown] errore:', err);
+    logger.error('Shutdown error', { err });
+  }
+  console.log('  [shutdown] exit.');
+  // Usiamo hardKill anche nel path pulito: su Windows tsx puo' spawnare
+  // un worker child che sopravvive a un plain process.exit() del parent.
+  // taskkill /T uccide l'intero albero, garantendo che nessuno resti in
+  // ascolto sulla porta. forceExit resta armato come ultima ridondanza.
+  hardKill(0);
+};
+
+// Nota su Windows: non intercettiamo Ctrl+C a livello stdin. Lasciamo che
+// cmd.exe gestisca il suo prompt "Terminate batch job (Y/N)?" — premendo Y
+// + Invio cmd.exe invia il kill al process tree, e sul child node arrivano
+// i signal standard gestiti qui sotto. Tentare di bypassare con readline o
+// raw-mode stdin si e' rivelato fragile: se lo shutdown handler si blocca
+// l'utente perde anche l'uscita di cortesia offerta da cmd.exe.
+process.on('SIGINT', () => void shutdown('SIGINT'));
+process.on('SIGTERM', () => void shutdown('SIGTERM'));
+// SIGBREAK: Ctrl+Break su Windows. SIGHUP: chiusura terminale.
+process.on('SIGBREAK', () => void shutdown('SIGBREAK'));
+process.on('SIGHUP', () => void shutdown('SIGHUP'));
 
 export default app;

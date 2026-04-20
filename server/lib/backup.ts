@@ -135,5 +135,5 @@ export async function listBackups(): Promise<BackupInfo[]> {
  */
 export function scheduleBackup(everyHours: number = 24): NodeJS.Timeout {
   const ms = Math.max(1, everyHours) * 60 * 60 * 1000;
-  return setInterval(() => performBackup('scheduled').catch(() => {}), ms);
+  return setInterval(() => performBackup('scheduled').catch(() => {}), ms).unref();
 }

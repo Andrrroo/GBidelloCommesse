@@ -71,19 +71,15 @@ export default defineConfig({
               },
             },
           },
+          // NOTA: le /api/* NON vanno cachate — altrimenti quando il
+          // server va giù il browser serve risposte stale (ad es.
+          // /api/auth/status con una sessione vecchia) facendo credere
+          // all'utente che l'app sia funzionante. Con NetworkOnly,
+          // offline = errore reale, come dovrebbe essere per dati
+          // finanziari real-time.
           {
             urlPattern: /\/api\/.*/i,
-            handler: "NetworkFirst",
-            options: {
-              cacheName: "api-cache",
-              expiration: {
-                maxEntries: 100,
-                maxAgeSeconds: 60 * 60 * 24, // 1 day
-              },
-              cacheableResponse: {
-                statuses: [0, 200],
-              },
-            },
+            handler: "NetworkOnly",
           },
         ],
       },

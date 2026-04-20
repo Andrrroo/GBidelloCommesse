@@ -311,16 +311,14 @@ export default function ProjectsTable() {
       <div className="mb-6">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-lg font-semibold text-gray-900">Tutte le Commesse</h3>
-          {isAdmin && (
-            <Button
-              className="button-g2-primary"
-              onClick={() => setShowNewProjectDialog(true)}
-              data-testid="add-project"
-            >
-              <Plus className="h-4 w-4 mr-1" />
-              Nuova Commessa
-            </Button>
-          )}
+          <Button
+            className="button-g2-primary"
+            onClick={() => setShowNewProjectDialog(true)}
+            data-testid="add-project"
+          >
+            <Plus className="h-4 w-4 mr-1" />
+            Nuova Commessa
+          </Button>
         </div>
 
         {/* Column Toggle Buttons */}
