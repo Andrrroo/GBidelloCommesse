@@ -253,28 +253,41 @@ export default function UsersManagement() {
 
               <div>
                 <Label htmlFor="role">Ruolo *</Label>
-                <Select
-                  value={formData.role}
-                  onValueChange={(value: UserRole) => setFormData({ ...formData, role: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="collaboratore">Collaboratore</SelectItem>
-                    <SelectItem value="amministratore">
-                      <span className="flex items-center gap-2">
-                        <Shield className="w-4 h-4" />
-                        Amministratore
-                      </span>
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-gray-500 mt-1">
-                  {formData.role === "amministratore"
-                    ? "Accesso completo al sistema"
-                    : "Accesso limitato, senza gestione fatture in ingresso"}
-                </p>
+                {(() => {
+                  // Quando si edita il proprio account, il ruolo e' bloccato:
+                  // un admin potrebbe auto-degradarsi e perdere l'accesso
+                  // amministrativo (bloccato anche lato server).
+                  const isEditingSelf = !!editingUser && editingUser.id === currentUser?.id;
+                  return (
+                    <>
+                      <Select
+                        value={formData.role}
+                        onValueChange={(value: UserRole) => setFormData({ ...formData, role: value })}
+                        disabled={isEditingSelf}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="collaboratore">Collaboratore</SelectItem>
+                          <SelectItem value="amministratore">
+                            <span className="flex items-center gap-2">
+                              <Shield className="w-4 h-4" />
+                              Amministratore
+                            </span>
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-gray-500 mt-1">
+                        {isEditingSelf
+                          ? "Non puoi cambiare il ruolo del tuo account"
+                          : formData.role === "amministratore"
+                            ? "Accesso completo al sistema"
+                            : "Accesso limitato, senza gestione fatture in ingresso"}
+                      </p>
+                    </>
+                  );
+                })()}
               </div>
 
               <DialogFooter>

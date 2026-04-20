@@ -55,6 +55,12 @@ usersRouter.put('/api/users/:id', async (req, res) => {
     if (sessionUser?.role !== 'amministratore' && result.data.role) {
       delete result.data.role;
     }
+    // Nessuno (nemmeno un admin) puo' cambiare il ruolo del proprio account:
+    // eviterebbe che un admin si auto-degradi a collaboratore e perda
+    // l'accesso amministrativo se non ci sono altri admin.
+    if (sessionUser?.id === req.params.id && result.data.role && result.data.role !== sessionUser.role) {
+      return res.status(400).json({ error: 'Non puoi cambiare il ruolo del tuo account' });
+    }
     const updated = await usersStorage.update(req.params.id, result.data);
     if (!updated) return res.status(404).json({ error: 'User not found' });
 

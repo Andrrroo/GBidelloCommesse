@@ -50,10 +50,19 @@ function emit(level: Level, message: string, context?: Record<string, unknown>) 
     return;
   }
 
-  // Dev: human-readable
-  const tag = level.toUpperCase().padEnd(5);
+  // Dev: human-readable con prefix colorato [SERVER] in stile concurrently.
+  // ANSI: 34=blue, 31=red, 33=yellow, 90=gray (bright-black), 0=reset.
+  const PREFIX = '\x1b[34m[SERVER]\x1b[0m';
+  const levelColor: Record<Level, string> = {
+    debug: '\x1b[90m',
+    info:  '\x1b[32m',
+    warn:  '\x1b[33m',
+    error: '\x1b[31m',
+  };
+  const tag = `${levelColor[level]}${level.toUpperCase().padEnd(5)}\x1b[0m`;
+  const time = `\x1b[90m${base.t}\x1b[0m`;
   const ctx = context && Object.keys(context).length ? ` ${JSON.stringify(context)}` : '';
-  const line = `[${base.t}] ${tag} ${message}${ctx}`;
+  const line = `${PREFIX} ${time} ${tag} ${message}${ctx}`;
   if (level === 'error' || level === 'warn') {
     console.error(line);
   } else {

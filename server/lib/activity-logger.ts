@@ -3,7 +3,7 @@ import type { Request } from 'express';
 import { activityLogsStorage } from '../storage.js';
 import { logger } from './logger.js';
 
-export type ActivityAction = 'create' | 'update' | 'delete' | 'login' | 'view' | 'payment';
+export type ActivityAction = 'create' | 'update' | 'delete' | 'view' | 'payment';
 
 export type ActivityEntity =
   | 'project'
@@ -35,8 +35,7 @@ interface LogActivityOptions {
  * Registra un evento nel log attività.
  * Non solleva mai errori: se il log fallisce (es. storage indisponibile)
  * viene loggato internamente ma l'operazione dell'utente prosegue.
- * Non logga se non c'è un utente associabile (tranne per azione 'login'
- * dove viene passato userIdOverride esplicito).
+ * Non logga se non c'è un utente associabile.
  */
 export async function logActivity(req: Request, opts: LogActivityOptions): Promise<void> {
   try {

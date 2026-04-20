@@ -6,8 +6,12 @@ import { router } from './routes/index.js';
 import { logger } from './lib/logger.js';
 import { performBackup, scheduleBackup } from './lib/backup.js';
 import { runMigrations } from './lib/migrations.js';
+import { purgeActivityLogs, scheduleActivityRetention } from './lib/activity-retention.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
 
 // Helper ANSI per un banner colorato nel CMD (nessuna dipendenza aggiuntiva).
 const C = {
@@ -154,36 +158,42 @@ async function start() {
   });
 
   const port = await findAvailablePort(BASE_PORT);
-  const startMs = Date.now();
   const httpServer = app.listen(port, '0.0.0.0', async () => {
-    const readyMs = Date.now() - startMs;
+    // process.uptime() misura i secondi dall'avvio del processo Node.
+    const readyMs = Math.round(process.uptime() * 1000);
     if (port !== BASE_PORT) {
       console.log(`\n  ${C.yellow}ⓘ Porta ${BASE_PORT} gia' in uso — server avviato su ${port}.${C.reset}`);
     }
 
-    // Banner stile Vite: titolo + Local + Network + tempo di ready.
-    const env = process.env.NODE_ENV || 'development';
-    const envLabel = isProduction ? C.red + 'production' : C.green + 'development';
+    // Banner in stile Vite originale (come pre-git, con prefisso [CLIENT]
+    // blu/verde stile concurrently per richiamare il layout familiare).
+    const CLIENT_PREFIX = `${C.green}[CLIENT]${C.reset}`;
     const arrow = `${C.brightGreen}➜${C.reset}`;
-    const pad = (s: string) => s.padEnd(9); // allinea "Local:" e "Network:"
+
+    // Leggo la versione di Vite dal package.json per l'header originale
+    let viteVersion = '';
+    try { viteVersion = require('vite/package.json').version; } catch { /* opzionale */ }
 
     console.log('');
-    console.log(`  ${C.bold}${C.brightCyan}GBidello Commesse${C.reset}  ${C.dim}${envLabel}${C.reset}`);
-    console.log('');
-    console.log(`  ${arrow}  ${C.bold}${pad('Local:')}${C.reset}  ${C.cyan}http://localhost:${port}/${C.reset}`);
+    console.log(`${CLIENT_PREFIX}   ${C.magenta}${C.bold}VITE${C.reset} ${C.brightCyan}v${viteVersion}${C.reset}  ${C.dim}ready in ${readyMs} ms${C.reset}`);
+    console.log(`${CLIENT_PREFIX}`);
+    console.log(`${CLIENT_PREFIX}   ${arrow}  ${C.bold}Local:${C.reset}   ${C.cyan}http://localhost:${port}/${C.reset}`);
     for (const addr of getNetworkAddresses()) {
-      console.log(`  ${arrow}  ${C.bold}${pad('Network:')}${C.reset}  ${C.cyan}http://${addr}:${port}/${C.reset}`);
+      console.log(`${CLIENT_PREFIX}   ${arrow}  ${C.bold}Network:${C.reset} ${C.cyan}http://${addr}:${port}/${C.reset}`);
     }
     console.log('');
-    console.log(`  ${C.dim}pronto in ${readyMs} ms — premi Ctrl+C per uscire${C.reset}`);
-    console.log('');
 
-    // Log strutturato (JSON-oriented) per logger — utile per grep/aggregazione.
-    logger.info('Server started', { port, env });
+    // Log strutturato con prefix [SERVER]
+    logger.info('Server started', { port, env: process.env.NODE_ENV || 'development' });
 
     await performBackup('startup');
     await runMigrations().catch((e) => logger.error('Migrations aborted', { err: e }));
     scheduleBackup(24);
+
+    // Retention activity log: purga subito login legacy + record > 90 giorni
+    // o eccedenti 10k; poi schedule ogni 24h.
+    await purgeActivityLogs().catch((e) => logger.error('Activity retention failed', { err: e }));
+    scheduleActivityRetention(24);
   });
 
   httpServer.keepAliveTimeout = 60_000;

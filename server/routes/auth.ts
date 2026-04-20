@@ -6,6 +6,8 @@ import { authLimiter, changePasswordLimiter } from '../middleware/rate-limit.js'
 import { logActivity } from '../lib/activity-logger.js';
 
 export const authRouter = Router();
+// I log di 'login' non vengono piu' scritti nell'activity log: sono rumore
+// rispetto agli eventi business (create/update/delete/payment).
 
 authRouter.post('/api/auth/login', authLimiter, async (req, res) => {
   try {
@@ -40,14 +42,6 @@ authRouter.post('/api/auth/login', authLimiter, async (req, res) => {
       email: user.email,
       collaboratoreId: user.collaboratoreId,
     };
-
-    // Activity log: accesso effettuato
-    await logActivity(req, {
-      action: 'login',
-      entityType: 'user',
-      entityId: user.id,
-      details: `Accesso come ${user.nome} (${user.role})`,
-    });
 
     res.json({ success: true, user: userWithoutPassword });
   } catch (error) {
