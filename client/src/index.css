@@ -86,11 +86,27 @@
 
 @layer components {
   .tab-button {
-    @apply px-6 py-4 text-sm font-semibold border-b-3 border-transparent hover:bg-white transition-all duration-200 flex items-center gap-2 whitespace-nowrap;
+    @apply relative px-6 py-4 text-sm font-semibold hover:bg-white transition-colors duration-200 flex items-center gap-2 whitespace-nowrap;
+  }
+
+  /* Underline rosso come pseudo-element: sempre presente ma scaleX(0).
+     Al tab attivo scala a 1 con transizione, così "cresce" dal centro
+     invece di comparire di colpo. Il bottom: -2px lo fa combaciare con
+     il border-b-2 del nav padre. */
+  .tab-button::after {
+    content: '';
+    @apply absolute inset-x-0 h-[2px] bg-secondary origin-center;
+    bottom: -2px;
+    transform: scaleX(0);
+    transition: transform 200ms ease;
   }
 
   .tab-button.active {
-    @apply border-secondary bg-white text-primary;
+    @apply bg-white text-primary;
+  }
+
+  .tab-button.active::after {
+    transform: scaleX(1);
   }
   
   .status-indicator {

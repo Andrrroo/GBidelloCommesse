@@ -333,7 +333,7 @@ export default function KpiDashboard() {
         </TabsList>
 
         {/* Trend Mensile */}
-        <TabsContent value="trend">
+        <TabsContent value="trend" className="data-[state=active]:animate-fade-in">
           <Card>
             <CardHeader>
               <div className="flex flex-wrap items-center justify-between gap-3">
@@ -379,7 +379,7 @@ export default function KpiDashboard() {
         </TabsContent>
 
         {/* Distribuzione Status */}
-        <TabsContent value="status">
+        <TabsContent value="status" className="data-[state=active]:animate-fade-in">
           <Card>
             <CardHeader>
               <CardTitle>Distribuzione Commesse per Status</CardTitle>
@@ -413,7 +413,7 @@ export default function KpiDashboard() {
         </TabsContent>
 
         {/* Top Commesse */}
-        <TabsContent value="top">
+        <TabsContent value="top" className="data-[state=active]:animate-fade-in">
           <Card>
             <CardHeader>
               <CardTitle>Top 5 Commesse per Valore</CardTitle>
@@ -455,7 +455,7 @@ export default function KpiDashboard() {
         </TabsContent>
 
         {/* Distribuzione Risorse */}
-        <TabsContent value="risorse">
+        <TabsContent value="risorse" className="data-[state=active]:animate-fade-in">
           <Card>
             <CardHeader>
               <CardTitle>Distribuzione Ore per Ruolo</CardTitle>

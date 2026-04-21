@@ -99,7 +99,10 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
   // Stile comune per i tab trigger. La linea rossa attiva è disegnata come
   // pseudo-element `after` posizionato con `-bottom-[2px]`, così cade
   // esattamente nello stesso Y del border-b-2 della TabsList sottostante.
-  const tabTriggerClass = "relative px-4 py-3 text-sm font-medium hover:bg-gray-50 transition-all rounded-none whitespace-nowrap data-[state=active]:text-secondary data-[state=active]:bg-secondary/5 data-[state=active]:after:content-[''] data-[state=active]:after:absolute data-[state=active]:after:inset-x-0 data-[state=active]:after:-bottom-[2px] data-[state=active]:after:h-[2px] data-[state=active]:after:bg-secondary";
+  // L'underline è sempre presente ma `scale-x-0` → cresce dal centro con
+  // transizione 200ms quando la tab diventa attiva. Colore testo/bg sfuma
+  // con `transition-colors` per un passaggio meno rigido.
+  const tabTriggerClass = "relative px-4 py-3 text-sm font-medium hover:bg-gray-50 rounded-none whitespace-nowrap transition-colors duration-200 data-[state=active]:text-secondary data-[state=active]:bg-secondary/5 after:content-[''] after:absolute after:inset-x-0 after:-bottom-[2px] after:h-[2px] after:bg-secondary after:scale-x-0 after:origin-center after:transition-transform after:duration-200 data-[state=active]:after:scale-x-100";
 
   return (
     <div className="min-h-screen bg-g2-accent">
@@ -127,7 +130,7 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
               />
             );
           })()}
-          <div className="animate-fade-in">
+          <div key={activeTab} className="animate-fade-in">
             {/* Dashboard Panel */}
             {activeTab === "dashboard" && (
               <div className="space-y-8" data-testid="dashboard-panel">
@@ -191,28 +194,28 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
                     </TabsList>
                   </div>
 
-                  <TabsContent value="fatture-emesse" className="bg-white rounded-b-2xl shadow-lg border border-t-0 border-gray-100 p-6 mt-0">
+                  <TabsContent value="fatture-emesse" className="bg-white rounded-b-2xl shadow-lg border border-t-0 border-gray-100 p-6 mt-0 data-[state=active]:animate-fade-in">
                     <FattureEmesseManager />
                   </TabsContent>
 
-                  <TabsContent value="fatture-ingresso" className="bg-white rounded-b-2xl shadow-lg border border-t-0 border-gray-100 p-6 mt-0">
+                  <TabsContent value="fatture-ingresso" className="bg-white rounded-b-2xl shadow-lg border border-t-0 border-gray-100 p-6 mt-0 data-[state=active]:animate-fade-in">
                     <FattureIngressoManager />
                   </TabsContent>
 
-                  <TabsContent value="fatture-consulenti" className="bg-white rounded-b-2xl shadow-lg border border-t-0 border-gray-100 p-6 mt-0">
+                  <TabsContent value="fatture-consulenti" className="bg-white rounded-b-2xl shadow-lg border border-t-0 border-gray-100 p-6 mt-0 data-[state=active]:animate-fade-in">
                     <FattureConsulentiManager />
                   </TabsContent>
 
-                  <TabsContent value="costi-generali" className="bg-white rounded-b-2xl shadow-lg border border-t-0 border-gray-100 p-6 mt-0">
+                  <TabsContent value="costi-generali" className="bg-white rounded-b-2xl shadow-lg border border-t-0 border-gray-100 p-6 mt-0 data-[state=active]:animate-fade-in">
                     <CostiGenerali />
                   </TabsContent>
 
-                  <TabsContent value="centro-costo" className="bg-white rounded-b-2xl shadow-lg border border-t-0 border-gray-100 p-6 mt-0">
+                  <TabsContent value="centro-costo" className="bg-white rounded-b-2xl shadow-lg border border-t-0 border-gray-100 p-6 mt-0 data-[state=active]:animate-fade-in">
                     <CentroCostoDashboard />
                   </TabsContent>
 
                   {isAdmin && (
-                    <TabsContent value="kpi" className="bg-white rounded-b-2xl shadow-lg border border-t-0 border-gray-100 p-6 mt-0">
+                    <TabsContent value="kpi" className="bg-white rounded-b-2xl shadow-lg border border-t-0 border-gray-100 p-6 mt-0 data-[state=active]:animate-fade-in">
                       <KpiDashboard />
                     </TabsContent>
                   )}
@@ -247,15 +250,15 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
                     </TabsList>
                   </div>
 
-                  <TabsContent value="scadenze" className="bg-white rounded-b-2xl shadow-lg border border-t-0 border-gray-100 p-6 mt-0">
+                  <TabsContent value="scadenze" className="bg-white rounded-b-2xl shadow-lg border border-t-0 border-gray-100 p-6 mt-0 data-[state=active]:animate-fade-in">
                     <Scadenzario />
                   </TabsContent>
 
-                  <TabsContent value="comunicazioni" className="bg-white rounded-b-2xl shadow-lg border border-t-0 border-gray-100 p-6 mt-0">
+                  <TabsContent value="comunicazioni" className="bg-white rounded-b-2xl shadow-lg border border-t-0 border-gray-100 p-6 mt-0 data-[state=active]:animate-fade-in">
                     <RegistroComunicazioni />
                   </TabsContent>
 
-                  <TabsContent value="risorse" className="bg-white rounded-b-2xl shadow-lg border border-t-0 border-gray-100 p-6 mt-0">
+                  <TabsContent value="risorse" className="bg-white rounded-b-2xl shadow-lg border border-t-0 border-gray-100 p-6 mt-0 data-[state=active]:animate-fade-in">
                     <GestioneRisorse />
                   </TabsContent>
                 </Tabs>
@@ -280,15 +283,15 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
                     </TabsList>
                   </div>
 
-                  <TabsContent value="clienti" className="bg-white rounded-b-2xl shadow-lg border border-t-0 border-gray-100 p-6 mt-0">
+                  <TabsContent value="clienti" className="bg-white rounded-b-2xl shadow-lg border border-t-0 border-gray-100 p-6 mt-0 data-[state=active]:animate-fade-in">
                     <ClientsTable />
                   </TabsContent>
 
-                  <TabsContent value="collaboratori" className="bg-white rounded-b-2xl shadow-lg border border-t-0 border-gray-100 p-6 mt-0">
+                  <TabsContent value="collaboratori" className="bg-white rounded-b-2xl shadow-lg border border-t-0 border-gray-100 p-6 mt-0 data-[state=active]:animate-fade-in">
                     <CollaboratoriManagement />
                   </TabsContent>
 
-                  <TabsContent value="parcella" className="bg-white rounded-b-2xl shadow-lg border border-t-0 border-gray-100 p-6 mt-0">
+                  <TabsContent value="parcella" className="bg-white rounded-b-2xl shadow-lg border border-t-0 border-gray-100 p-6 mt-0 data-[state=active]:animate-fade-in">
                     <ParcellaCalculator />
                   </TabsContent>
                 </Tabs>
@@ -320,22 +323,22 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
                     </TabsList>
                   </div>
 
-                  <TabsContent value="storage" className="bg-white rounded-b-2xl shadow-lg border border-t-0 border-gray-100 p-6 mt-0">
+                  <TabsContent value="storage" className="bg-white rounded-b-2xl shadow-lg border border-t-0 border-gray-100 p-6 mt-0 data-[state=active]:animate-fade-in">
                     <StoragePanel />
                   </TabsContent>
 
-                  <TabsContent value="calendar" className="bg-white rounded-b-2xl shadow-lg border border-t-0 border-gray-100 p-6 mt-0">
+                  <TabsContent value="calendar" className="bg-white rounded-b-2xl shadow-lg border border-t-0 border-gray-100 p-6 mt-0 data-[state=active]:animate-fade-in">
                     <CalendarFeedPanel />
                   </TabsContent>
 
                   {isAdmin && (
-                    <TabsContent value="users" className="bg-white rounded-b-2xl shadow-lg border border-t-0 border-gray-100 p-6 mt-0">
+                    <TabsContent value="users" className="bg-white rounded-b-2xl shadow-lg border border-t-0 border-gray-100 p-6 mt-0 data-[state=active]:animate-fade-in">
                       <UsersManagement />
                     </TabsContent>
                   )}
 
                   {isAdmin && (
-                    <TabsContent value="activity-log" className="bg-white rounded-b-2xl shadow-lg border border-t-0 border-gray-100 p-6 mt-0">
+                    <TabsContent value="activity-log" className="bg-white rounded-b-2xl shadow-lg border border-t-0 border-gray-100 p-6 mt-0 data-[state=active]:animate-fade-in">
                       <ActivityLogViewer showAll={true} />
                     </TabsContent>
                   )}

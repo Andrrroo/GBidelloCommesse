@@ -605,7 +605,7 @@ export default function GestioneRisorse() {
           <TabsTrigger value="by-project">Per Commessa</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="all" className="space-y-4">
+        <TabsContent value="all" className="space-y-4 data-[state=active]:animate-fade-in">
           <Card>
             <CardHeader>
               <CardTitle>Tutte le Risorse</CardTitle>
@@ -712,7 +712,7 @@ export default function GestioneRisorse() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="by-project" className="space-y-4">
+        <TabsContent value="by-project" className="space-y-4 data-[state=active]:animate-fade-in">
           {projectResourceStats.map(stat => (
             <Card key={stat.project.id}>
               <CardHeader>

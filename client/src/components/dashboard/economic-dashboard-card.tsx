@@ -172,7 +172,7 @@ export default function EconomicDashboardCard() {
           </TabsList>
 
           {/* Panoramica KPI */}
-          <TabsContent value="overview" className="space-y-6">
+          <TabsContent value="overview" className="space-y-6 data-[state=active]:animate-fade-in">
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
               {/* KPI 1: Importo Totale Opere */}
               <Card className="bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
@@ -300,7 +300,7 @@ export default function EconomicDashboardCard() {
           </TabsContent>
 
           {/* Grafici */}
-          <TabsContent value="charts" className="space-y-6">
+          <TabsContent value="charts" className="space-y-6 data-[state=active]:animate-fade-in">
             <div className="grid gap-6 md:grid-cols-2">
               {/* Grafico Distribuzione per Anno */}
               <Card>
@@ -416,7 +416,7 @@ export default function EconomicDashboardCard() {
           </TabsContent>
 
           {/* Top Commesse */}
-          <TabsContent value="top-projects" className="space-y-4">
+          <TabsContent value="top-projects" className="space-y-4 data-[state=active]:animate-fade-in">
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2">

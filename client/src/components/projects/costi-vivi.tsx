@@ -551,7 +551,7 @@ export default function CostiVivi({ user }: CostiViviProps) {
         </TabsList>
 
         {/* All Costs Tab */}
-        <TabsContent value="all" className="space-y-4">
+        <TabsContent value="all" className="space-y-4 data-[state=active]:animate-fade-in">
           {filteredCostiVivi.length === 0 ? (
             <Card>
               <CardContent className="pt-6">
@@ -636,7 +636,7 @@ export default function CostiVivi({ user }: CostiViviProps) {
         </TabsContent>
 
         {/* By Project Tab */}
-        <TabsContent value="by-project" className="space-y-4">
+        <TabsContent value="by-project" className="space-y-4 data-[state=active]:animate-fade-in">
           {costiPerProgetto.length === 0 ? (
             <Card>
               <CardContent className="pt-6">
@@ -722,7 +722,7 @@ export default function CostiVivi({ user }: CostiViviProps) {
         </TabsContent>
 
         {/* By Type Tab */}
-        <TabsContent value="by-type" className="space-y-4">
+        <TabsContent value="by-type" className="space-y-4 data-[state=active]:animate-fade-in">
           {filteredCostiVivi.length === 0 ? (
             <Card>
               <CardContent className="pt-6">

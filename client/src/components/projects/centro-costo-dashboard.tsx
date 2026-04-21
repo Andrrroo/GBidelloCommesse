@@ -306,7 +306,7 @@ export default function CentroCostoDashboard() {
         </TabsList>
 
         {/* Active Projects Tab */}
-        <TabsContent value="active" className="space-y-4">
+        <TabsContent value="active" className="space-y-4 data-[state=active]:animate-fade-in">
           {centriCosto.length === 0 ? (
             <Card>
               <CardContent className="pt-6">
@@ -416,7 +416,7 @@ export default function CentroCostoDashboard() {
         </TabsContent>
 
         {/* Over Budget Tab */}
-        <TabsContent value="over-budget" className="space-y-4">
+        <TabsContent value="over-budget" className="space-y-4 data-[state=active]:animate-fade-in">
           {centriCosto.filter(cc => cc.budgetIniziale && cc.totaleSpeso > cc.budgetIniziale).length === 0 ? (
             <Card>
               <CardContent className="pt-6">
@@ -464,7 +464,7 @@ export default function CentroCostoDashboard() {
         </TabsContent>
 
         {/* Near Budget Tab */}
-        <TabsContent value="near-budget" className="space-y-4">
+        <TabsContent value="near-budget" className="space-y-4 data-[state=active]:animate-fade-in">
           {centriCosto.filter(cc => cc.budgetIniziale && cc.percentualeUtilizzata >= 80 && cc.percentualeUtilizzata <= 100).length === 0 ? (
             <Card>
               <CardContent className="pt-6">
