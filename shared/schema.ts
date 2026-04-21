@@ -236,6 +236,10 @@ export const insertUserSchema = z.object({
   collaboratoreId: z.string().optional(),
   active: z.boolean().default(true),
   createdAt: z.string().optional(),
+  // Token random per il feed iCal `/api/calendar/feed.ics?token=...`.
+  // Generato on-demand quando l'utente apre il pannello Calendar; rigenerabile
+  // per revocare la sottoscrizione precedente.
+  calendarToken: z.string().optional(),
 });
 
 export type InsertUser = z.infer<typeof insertUserSchema>;

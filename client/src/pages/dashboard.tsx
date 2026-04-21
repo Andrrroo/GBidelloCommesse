@@ -27,6 +27,7 @@ import StoragePanel from "@/components/system/storage-panel";
 import UsersManagement from "@/components/system/users-management";
 import CollaboratoriManagement from "@/components/system/collaboratori-management";
 import ActivityLogViewer from "@/components/system/activity-log-viewer";
+import CalendarFeedPanel from "@/components/system/calendar-feed-panel";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BreadcrumbNav } from "@/components/ui/breadcrumb-nav";
 import { User } from "@/hooks/useAuth";
@@ -67,6 +68,7 @@ const SUB_TAB_LABELS: Record<string, Record<string, string>> = {
   },
   sistema: {
     storage: "Storage",
+    calendar: "Calendario",
     users: "Utenti",
     "activity-log": "Activity Log",
   },
@@ -94,8 +96,10 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
     setActiveSubTab(prev => ({ ...prev, [mainTab]: subTab }));
   };
 
-  // Stile comune per i tab trigger
-  const tabTriggerClass = "px-4 py-3 text-sm font-medium border-b-2 border-transparent data-[state=active]:border-secondary data-[state=active]:text-secondary data-[state=active]:bg-secondary/5 hover:bg-gray-50 transition-all rounded-none whitespace-nowrap";
+  // Stile comune per i tab trigger. La linea rossa attiva è disegnata come
+  // pseudo-element `after` posizionato con `-bottom-[2px]`, così cade
+  // esattamente nello stesso Y del border-b-2 della TabsList sottostante.
+  const tabTriggerClass = "relative px-4 py-3 text-sm font-medium hover:bg-gray-50 transition-all rounded-none whitespace-nowrap data-[state=active]:text-secondary data-[state=active]:bg-secondary/5 data-[state=active]:after:content-[''] data-[state=active]:after:absolute data-[state=active]:after:inset-x-0 data-[state=active]:after:-bottom-[2px] data-[state=active]:after:h-[2px] data-[state=active]:after:bg-secondary";
 
   return (
     <div className="min-h-screen bg-g2-accent">
@@ -162,8 +166,8 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
             {activeTab === "economia" && (
               <div data-testid="economia-panel">
                 <Tabs value={activeSubTab.economia} onValueChange={(value) => handleSubTabChange("economia", value)}>
-                  <div className="bg-white rounded-t-2xl border-b border-gray-200 shadow-sm">
-                    <TabsList className="flex w-full bg-transparent border-0 p-0 flex-wrap">
+                  <div className="bg-white rounded-t-2xl shadow-sm">
+                    <TabsList className="flex h-auto w-full items-stretch bg-transparent border-0 border-b-2 border-gray-200 p-0 flex-wrap rounded-none">
                       <TabsTrigger value="fatture-emesse" className={tabTriggerClass} data-testid="tab-fatture-emesse">
                         Fatture Emesse
                       </TabsTrigger>
@@ -229,8 +233,8 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
             {activeTab === "operativita" && (
               <div data-testid="operativita-panel">
                 <Tabs value={activeSubTab.operativita} onValueChange={(value) => handleSubTabChange("operativita", value)}>
-                  <div className="bg-white rounded-t-2xl border-b border-gray-200 shadow-sm">
-                    <TabsList className="flex w-full bg-transparent border-0 p-0">
+                  <div className="bg-white rounded-t-2xl shadow-sm">
+                    <TabsList className="flex h-auto w-full items-stretch bg-transparent border-0 border-b-2 border-gray-200 p-0 rounded-none">
                       <TabsTrigger value="scadenze" className={tabTriggerClass} data-testid="tab-scadenze">
                         Scadenzario
                       </TabsTrigger>
@@ -262,8 +266,8 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
             {activeTab === "anagrafica" && isAdmin && (
               <div data-testid="anagrafica-panel">
                 <Tabs value={activeSubTab.anagrafica} onValueChange={(value) => handleSubTabChange("anagrafica", value)}>
-                  <div className="bg-white rounded-t-2xl border-b border-gray-200 shadow-sm">
-                    <TabsList className="flex w-full bg-transparent border-0 p-0">
+                  <div className="bg-white rounded-t-2xl shadow-sm">
+                    <TabsList className="flex h-auto w-full items-stretch bg-transparent border-0 border-b-2 border-gray-200 p-0 rounded-none">
                       <TabsTrigger value="clienti" className={tabTriggerClass} data-testid="tab-clienti">
                         Anagrafica Clienti
                       </TabsTrigger>
@@ -295,10 +299,13 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
             {activeTab === "sistema" && (
               <div data-testid="sistema-panel">
                 <Tabs value={activeSubTab.sistema} onValueChange={(value) => handleSubTabChange("sistema", value)}>
-                  <div className="bg-white rounded-t-2xl border-b border-gray-200 shadow-sm">
-                    <TabsList className="flex w-full bg-transparent border-0 p-0">
+                  <div className="bg-white rounded-t-2xl shadow-sm">
+                    <TabsList className="flex h-auto w-full items-stretch bg-transparent border-0 border-b-2 border-gray-200 p-0 rounded-none">
                       <TabsTrigger value="storage" className={tabTriggerClass} data-testid="tab-storage">
                         Storage
+                      </TabsTrigger>
+                      <TabsTrigger value="calendar" className={tabTriggerClass} data-testid="tab-calendar">
+                        Calendario
                       </TabsTrigger>
                       {isAdmin && (
                         <TabsTrigger value="users" className={tabTriggerClass} data-testid="tab-users">
@@ -315,6 +322,10 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
 
                   <TabsContent value="storage" className="bg-white rounded-b-2xl shadow-lg border border-t-0 border-gray-100 p-6 mt-0">
                     <StoragePanel />
+                  </TabsContent>
+
+                  <TabsContent value="calendar" className="bg-white rounded-b-2xl shadow-lg border border-t-0 border-gray-100 p-6 mt-0">
+                    <CalendarFeedPanel />
                   </TabsContent>
 
                   {isAdmin && (

@@ -14,6 +14,7 @@ import { usersRouter } from './users.js';
 import { systemRouter } from './system.js';
 import { dashboardRouter } from './dashboard.js';
 import { collaboratoriRouter } from './collaboratori.js';
+import { calendarRouter } from './calendar.js';
 
 export const router = Router();
 
@@ -21,10 +22,12 @@ export const router = Router();
 // su auth/change-password restano più restrittivi e si applicano prima.
 router.use('/api', globalApiLimiter);
 
-// Middleware auth globale — protegge tutte le route /api/ tranne auth
+// Middleware auth globale — protegge tutte le route /api/ tranne auth e il
+// feed iCal (che si autentica con ?token=... per-utente, non via sessione,
+// perché Google Calendar fa polling senza cookie).
 router.use('/api', (req: Request, res: Response, next: NextFunction) => {
   const relativePath = req.path;
-  const publicPaths = ['/auth/login', '/auth/status', '/auth/logout'];
+  const publicPaths = ['/auth/login', '/auth/status', '/auth/logout', '/calendar/feed.ics'];
   if (publicPaths.includes(relativePath)) {
     return next();
   }
@@ -98,3 +101,4 @@ router.use(usersRouter);
 router.use(systemRouter);
 router.use(dashboardRouter);
 router.use(collaboratoriRouter);
+router.use(calendarRouter);
