@@ -69,17 +69,19 @@ export default function ProjectsTable() {
   const [summaryData, setSummaryData] = useState<ProjectSummary | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
 
-  // Column visibility toggles
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const isAdmin = user?.role === "amministratore";
+
+  // Column visibility toggles. La colonna Fatturazione è visibile a tutti:
+  // i collaboratori devono sapere quali fatture sono associate a ciascuna
+  // commessa. Gli importi sono nascosti dal render per i non-admin.
   const [showTechInfo, setShowTechInfo] = useState(false);
   const [showPrestazioni, setShowPrestazioni] = useState(false);
   const [showFatturazione, setShowFatturazione] = useState(true);
   const [showComunicazioni, setShowComunicazioni] = useState(true);
   const [showScadenze, setShowScadenze] = useState(true);
-
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
-  const { user } = useAuth();
-  const isAdmin = user?.role === "amministratore";
 
   const { data: projects = [], isLoading } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
@@ -100,13 +102,23 @@ export default function ProjectsTable() {
     queryKey: ["/api/fatture-emesse"],
   });
 
-  // Helper: calcola dati fatturazione dal vivo per un progetto
+  // Helper: calcola dati fatturazione dal vivo per un progetto. Gli importi
+  // (importoTotale) sono rimossi dal server per i non-admin, quindi per loro
+  // i totali in euro risultano 0 — la UI nasconde i numeri usando isAdmin.
   const getProjectFatturazione = (projectId: string) => {
     const fatture = fattureEmesse.filter(f => f.projectId === projectId);
-    const totaleEmesso = fatture.reduce((acc, f) => acc + f.importoTotale, 0);
-    const totaleIncassato = fatture.filter(f => f.incassata).reduce((acc, f) => acc + f.importoTotale, 0);
+    const totaleEmesso = fatture.reduce((acc, f) => acc + (f.importoTotale ?? 0), 0);
+    const totaleIncassato = fatture.filter(f => f.incassata).reduce((acc, f) => acc + (f.importoTotale ?? 0), 0);
     const daIncassare = totaleEmesso - totaleIncassato;
-    return { count: fatture.length, totaleEmesso, totaleIncassato, daIncassare, tutteIncassate: fatture.length > 0 && fatture.every(f => f.incassata) };
+    const countDaIncassare = fatture.filter(f => !f.incassata).length;
+    return {
+      count: fatture.length,
+      totaleEmesso,
+      totaleIncassato,
+      daIncassare,
+      countDaIncassare,
+      tutteIncassate: fatture.length > 0 && fatture.every(f => f.incassata),
+    };
   };
 
   const updateStatusMutation = useMutation({
@@ -731,7 +743,7 @@ export default function ProjectsTable() {
                             {fatt.count === 0 ? (
                               <>
                                 <span className="text-xs text-gray-500 italic">Nessuna fattura</span>
-                                {concordato > 0 && (
+                                {isAdmin && concordato > 0 && (
                                   <span className="text-xs text-indigo-600 font-medium whitespace-nowrap inline-flex items-center gap-1">
                                     <ClipboardList className="h-3 w-3" aria-hidden="true" />
                                     Da fatturare: {fmtEur(concordato)}
@@ -744,12 +756,14 @@ export default function ProjectsTable() {
                                   <span className="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-800 rounded-md font-medium whitespace-nowrap">
                                     {fatt.count} fattur{fatt.count === 1 ? 'a' : 'e'}
                                   </span>
-                                  <span className="text-xs text-gray-600 whitespace-nowrap">
-                                    {fmtEur(fatt.totaleEmesso)}
-                                  </span>
+                                  {isAdmin && (
+                                    <span className="text-xs text-gray-600 whitespace-nowrap">
+                                      {fmtEur(fatt.totaleEmesso)}
+                                    </span>
+                                  )}
                                 </div>
-                                {/* Avanzamento rispetto al concordato */}
-                                {sforamento ? (
+                                {/* Avanzamento vs concordato: solo admin (usa importi) */}
+                                {isAdmin && (sforamento ? (
                                   <span className="text-xs px-1.5 py-0.5 bg-red-100 text-red-800 rounded-md font-medium whitespace-nowrap inline-flex items-center gap-1">
                                     <AlertTriangle className="h-3 w-3" aria-hidden="true" />
                                     Eccedenza {fmtEur(fatt.totaleEmesso - concordato)}
@@ -764,22 +778,22 @@ export default function ProjectsTable() {
                                     <ClipboardList className="h-3 w-3" aria-hidden="true" />
                                     Residuo: {fmtEur(residuoDaFatturare)}
                                   </span>
-                                ) : null}
-                                {/* Stato incasso */}
+                                ) : null)}
+                                {/* Stato incasso: importi solo admin, conteggio per tutti */}
                                 {fatt.tutteIncassate ? (
                                   <span className="text-xs px-1.5 py-0.5 bg-green-100 text-green-800 rounded-md font-medium whitespace-nowrap inline-flex items-center gap-1">
                                     <Check className="h-3 w-3" aria-hidden="true" />
                                     Tutto incassato
                                   </span>
-                                ) : fatt.totaleIncassato > 0 ? (
+                                ) : isAdmin ? (
                                   <span className="text-xs text-orange-600 font-medium whitespace-nowrap inline-flex items-center gap-1">
                                     <Loader2 className="h-3 w-3" aria-hidden="true" />
-                                    Da incassare {fmtEur(fatt.daIncassare)}
+                                    Da incassare {fmtEur(fatt.totaleIncassato > 0 ? fatt.daIncassare : fatt.totaleEmesso)}
                                   </span>
                                 ) : (
                                   <span className="text-xs text-orange-600 font-medium whitespace-nowrap inline-flex items-center gap-1">
                                     <Loader2 className="h-3 w-3" aria-hidden="true" />
-                                    Da incassare {fmtEur(fatt.totaleEmesso)}
+                                    {fatt.countDaIncassare} da incassare
                                   </span>
                                 )}
                               </>
@@ -977,16 +991,14 @@ export default function ProjectsTable() {
               <span className="text-gray-500">Caricamento...</span>
             </div>
           ) : summaryData ? (() => {
-            // Il server invia un payload ridotto per i non-admin: mancano
-            // `margine`, `marginePercentuale`, `costi.totale`, `costi.fattureConsulenti`,
-            // `costi.prestazioni`, `usciteBreakdown`. Usiamo `hasFullFinancials`
-            // come flag per nascondere le sezioni che richiedono quei campi.
-            const hasFullFinancials = typeof summaryData.margine === 'number';
-            const marginePositivo = hasFullFinancials ? summaryData.margine >= 0 : true;
+            // Il server sanitizza il payload per i non-admin: azzera
+            // fattureEmesse.totale/incassato, margine, marginePercentuale,
+            // entrateBreakdown e filtra le righe emesse dalla timeline.
+            // `showEntrate` gate le sezioni che mostrano valori di ricavo.
+            const showEntrate = isAdmin;
+            const marginePositivo = summaryData.margine >= 0;
             const fmt = (v: number) => v.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' });
 
-            // Breakdown per cliente/fornitore (servito dall'endpoint /summary).
-            // Fallback per payload legacy: lista vuota → il componente mostra l'empty state.
             const entrateBreakdown: PieDatum[] = summaryData.entrateBreakdown ?? [];
             const usciteBreakdown: PieDatum[] = summaryData.usciteBreakdown ?? [];
             const hasBreakdown = entrateBreakdown.length > 0 || usciteBreakdown.length > 0;
@@ -1018,8 +1030,8 @@ export default function ProjectsTable() {
 
             return (
               <div className="space-y-4 overflow-y-auto overflow-x-hidden px-1 py-1 flex-1">
-                {/* Avanzamento fatturazione vs importo concordato */}
-                {importoConcordato > 0 && (
+                {/* Avanzamento fatturazione vs importo concordato — solo admin */}
+                {showEntrate && importoConcordato > 0 && (
                   <div className={`p-4 rounded-lg border ${sforamento ? 'bg-red-50 border-red-300' : 'bg-indigo-50 border-indigo-200'}`}>
                     <div className="flex justify-between items-center mb-2">
                       <h4 className={`font-semibold text-sm flex items-center gap-2 ${sforamento ? 'text-red-800' : 'text-indigo-800'}`}>
@@ -1064,20 +1076,20 @@ export default function ProjectsTable() {
                   </div>
                 )}
 
-                {/* Riepilogo numerico: Costi/Margine visibili solo con payload admin */}
-                <div className={hasFullFinancials ? "grid grid-cols-3 gap-3" : "grid grid-cols-1 gap-3"}>
-                  <div className="p-3 rounded-lg bg-green-50 border border-green-200 text-center">
-                    <p className="text-xs text-green-700">Fatturato</p>
-                    <p className="font-bold text-green-800">{fmt(summaryData.fattureEmesse.totale)}</p>
-                    <p className="text-xs text-green-600">Incassato: {fmt(summaryData.fattureEmesse.incassato)}</p>
-                  </div>
-                  {hasFullFinancials && (
-                    <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-center">
-                      <p className="text-xs text-red-700">Costi</p>
-                      <p className="font-bold text-red-800">{fmt(summaryData.costi.totale)}</p>
+                {/* Riepilogo numerico: Fatturato/Margine solo admin, Costi sempre */}
+                <div className={showEntrate ? "grid grid-cols-3 gap-3" : "grid grid-cols-1 gap-3"}>
+                  {showEntrate && (
+                    <div className="p-3 rounded-lg bg-green-50 border border-green-200 text-center">
+                      <p className="text-xs text-green-700">Fatturato</p>
+                      <p className="font-bold text-green-800">{fmt(summaryData.fattureEmesse.totale)}</p>
+                      <p className="text-xs text-green-600">Incassato: {fmt(summaryData.fattureEmesse.incassato)}</p>
                     </div>
                   )}
-                  {hasFullFinancials && (
+                  <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-center">
+                    <p className="text-xs text-red-700">Costi</p>
+                    <p className="font-bold text-red-800">{fmt(summaryData.costi.totale)}</p>
+                  </div>
+                  {showEntrate && (
                     <div className={`p-3 rounded-lg border text-center ${marginePositivo ? 'bg-blue-50 border-blue-200' : 'bg-orange-50 border-orange-200'}`}>
                       <p className={`text-xs ${marginePositivo ? 'text-blue-700' : 'text-orange-700'}`}>{marginePositivo ? 'Guadagno' : 'Perdita'}</p>
                       <p className={`font-bold ${marginePositivo ? 'text-blue-800' : 'text-red-600'}`}>{fmt(summaryData.margine)}</p>
@@ -1135,7 +1147,9 @@ export default function ProjectsTable() {
                         <YAxis tick={{ fontSize: 11 }} stroke="#6B7280" tickFormatter={(v) => `€${(v / 1000).toFixed(0)}k`} />
                         <Tooltip formatter={(value: number) => fmt(value)} contentStyle={{ borderRadius: '8px', border: '1px solid #E5E7EB' }} />
                         <Legend />
-                        <Line type="monotone" dataKey="entrate" stroke="#22C55E" strokeWidth={2} name="Entrate cumulative" dot={{ r: 4 }} />
+                        {showEntrate && (
+                          <Line type="monotone" dataKey="entrate" stroke="#22C55E" strokeWidth={2} name="Entrate cumulative" dot={{ r: 4 }} />
+                        )}
                         <Line type="monotone" dataKey="uscite" stroke="#EF4444" strokeWidth={2} name="Uscite cumulative" dot={{ r: 4 }} />
                       </LineChart>
                     </ResponsiveContainer>
@@ -1202,10 +1216,15 @@ export default function ProjectsTable() {
                     </span>
                   );
                 }
+                const nonIncassate = fattureEmesse.filter(f => f.projectId === pendingStatusChange.id && !f.incassata).length;
                 return (
                   <span className="text-orange-600 font-medium inline-flex items-start gap-2">
                     <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" aria-hidden="true" />
-                    <span>Questa commessa ha {fatt.count} fattur{fatt.count === 1 ? 'a' : 'e'} emess{fatt.count === 1 ? 'a' : 'e'} di cui {fatt.daIncassare.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' })} ancora da incassare. Sei sicuro di volerla concludere?</span>
+                    <span>
+                      {isAdmin
+                        ? <>Questa commessa ha {fatt.count} fattur{fatt.count === 1 ? 'a' : 'e'} emess{fatt.count === 1 ? 'a' : 'e'} di cui {fatt.daIncassare.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' })} ancora da incassare. Sei sicuro di volerla concludere?</>
+                        : <>Questa commessa ha {fatt.count} fattur{fatt.count === 1 ? 'a' : 'e'} emess{fatt.count === 1 ? 'a' : 'e'}, di cui {nonIncassate} non ancora incassat{nonIncassate === 1 ? 'a' : 'e'}. Sei sicuro di volerla concludere?</>}
+                    </span>
                   </span>
                 );
               })()}

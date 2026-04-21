@@ -30,6 +30,7 @@ import {
   hasProgettazione,
   formatImporto
 } from "@/lib/prestazioni-utils";
+import { useAuth } from "@/hooks/useAuth";
 import { Loader2, Save } from "lucide-react";
 
 interface PrestazioniModalProps {
@@ -41,6 +42,8 @@ interface PrestazioniModalProps {
 export default function PrestazioniModal({ project, isOpen, onClose }: PrestazioniModalProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const isAdmin = user?.role === "amministratore";
 
   // Form state
   const [formData, setFormData] = useState<ProjectPrestazioni>({
@@ -313,67 +316,73 @@ export default function PrestazioniModal({ project, isOpen, onClose }: Prestazio
                 </p>
               </div>
               
-              <div className="space-y-2">
-                <Label htmlFor="importo-opere" className="text-sm font-medium">
-                  Importo Opere (€)
-                </Label>
-                <Input
-                  id="importo-opere"
-                  type="number"
-                  placeholder="0"
-                  min="0"
-                  step="1000"
-                  value={formData.importoOpere || ''}
-                  onChange={(e) => handleInputChange('importoOpere', e.target.value === '' ? '' : parseFloat(e.target.value) || '')}
-                  data-testid="input-importo-opere"
-                />
-                <p className="text-xs text-gray-500">
-                  Importo dei lavori base per calcolo parcella
-                </p>
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="importo-servizio" className="text-sm font-medium">
-                  Importo Servizio Professionale (€)
-                </Label>
-                <Input
-                  id="importo-servizio"
-                  type="number"
-                  placeholder="0"
-                  min="0"
-                  step="100"
-                  value={formData.importoServizio || ''}
-                  onChange={(e) => handleInputChange('importoServizio', e.target.value === '' ? '' : parseFloat(e.target.value) || '')}
-                  data-testid="input-importo-servizio"
-                />
-                <p className="text-xs text-gray-500">
-                  Compenso professionale al netto di cassa e IVA
-                </p>
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="percentuale-parcella" className="text-sm font-medium">
-                  Percentuale Parcella (%)
-                </Label>
-                <Input
-                  id="percentuale-parcella"
-                  type="number"
-                  placeholder="0.00"
-                  min="0"
-                  max="100"
-                  step="0.5"
-                  value={formData.percentualeParcella || ''}
-                  onChange={(e) => handleInputChange('percentualeParcella', e.target.value === '' ? '' : parseFloat(e.target.value) || '')}
-                  data-testid="input-percentuale-parcella"
-                />
-                <p className="text-xs text-gray-500">
-                  Percentuale applicata sull'importo opere
-                </p>
-              </div>
+              {/* Campi economici: importi e percentuale parcella rappresentano
+                  il valore contrattuale/compenso atteso → solo admin */}
+              {isAdmin && (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="importo-opere" className="text-sm font-medium">
+                      Importo Opere (€)
+                    </Label>
+                    <Input
+                      id="importo-opere"
+                      type="number"
+                      placeholder="0"
+                      min="0"
+                      step="1000"
+                      value={formData.importoOpere || ''}
+                      onChange={(e) => handleInputChange('importoOpere', e.target.value === '' ? '' : parseFloat(e.target.value) || '')}
+                      data-testid="input-importo-opere"
+                    />
+                    <p className="text-xs text-gray-500">
+                      Importo dei lavori base per calcolo parcella
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="importo-servizio" className="text-sm font-medium">
+                      Importo Servizio Professionale (€)
+                    </Label>
+                    <Input
+                      id="importo-servizio"
+                      type="number"
+                      placeholder="0"
+                      min="0"
+                      step="100"
+                      value={formData.importoServizio || ''}
+                      onChange={(e) => handleInputChange('importoServizio', e.target.value === '' ? '' : parseFloat(e.target.value) || '')}
+                      data-testid="input-importo-servizio"
+                    />
+                    <p className="text-xs text-gray-500">
+                      Compenso professionale al netto di cassa e IVA
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="percentuale-parcella" className="text-sm font-medium">
+                      Percentuale Parcella (%)
+                    </Label>
+                    <Input
+                      id="percentuale-parcella"
+                      type="number"
+                      placeholder="0.00"
+                      min="0"
+                      max="100"
+                      step="0.5"
+                      value={formData.percentualeParcella || ''}
+                      onChange={(e) => handleInputChange('percentualeParcella', e.target.value === '' ? '' : parseFloat(e.target.value) || '')}
+                      data-testid="input-percentuale-parcella"
+                    />
+                    <p className="text-xs text-gray-500">
+                      Percentuale applicata sull'importo opere
+                    </p>
+                  </div>
+                </>
+              )}
             </div>
 
-            {/* Riepilogo importi */}
-            {(formData.importoOpere || formData.importoServizio) && (
+            {/* Riepilogo importi — solo admin */}
+            {isAdmin && (formData.importoOpere || formData.importoServizio) && (
               <div className="mt-4 p-3 bg-white border border-gray-200 rounded-lg">
                 <h4 className="text-sm font-semibold text-gray-800 mb-2">Riepilogo Economico</h4>
                 <div className="grid grid-cols-2 gap-4 text-sm">

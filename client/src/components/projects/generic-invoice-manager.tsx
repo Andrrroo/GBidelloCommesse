@@ -12,6 +12,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, invalidateDashboard } from "@/lib/queryClient";
 import { Plus, Pencil, Trash2, Check, Clock, Euro, Download, FileText, Package, Users, CreditCard, ClipboardList, X, ArrowUp, ArrowDown, type LucideIcon } from "lucide-react";
 import { PdfUpload } from "@/components/ui/pdf-upload";
@@ -119,6 +120,13 @@ export default function GenericInvoiceManager({ config }: GenericInvoiceManagerP
   const tableTopRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const isAdmin = user?.role === "amministratore";
+  // Per le fatture emesse (entrate aziendali) i collaboratori hanno sola
+  // lettura, senza importi. KPI totali, colonna Importo, bottoni di azione
+  // e il dialogo di creazione/modifica sono gated su questo flag.
+  const canManageEmesse = config.type !== 'emesse' || isAdmin;
+  const showAmounts = config.type !== 'emesse' || isAdmin;
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
   const [invoiceIdToDelete, setInvoiceIdToDelete] = useState<string | null>(null);
@@ -445,7 +453,7 @@ export default function GenericInvoiceManager({ config }: GenericInvoiceManagerP
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="data">Ordina per: Data</SelectItem>
-                <SelectItem value="importo">Ordina per: Importo</SelectItem>
+                {showAmounts && <SelectItem value="importo">Ordina per: Importo</SelectItem>}
               </SelectContent>
             </Select>
             <Button
@@ -479,42 +487,46 @@ export default function GenericInvoiceManager({ config }: GenericInvoiceManagerP
             </Button>
           )}
         </div>
-        <Button onClick={() => setIsDialogOpen(true)}>
-          <Plus className="h-4 w-4 mr-1" />
-          Nuova Fattura
-        </Button>
+        {canManageEmesse && (
+          <Button onClick={() => setIsDialogOpen(true)}>
+            <Plus className="h-4 w-4 mr-1" />
+            Nuova Fattura
+          </Button>
+        )}
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card>
-          <CardContent className="pt-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-500">Totale</span>
-              <FileText className="h-4 w-4 text-blue-500" />
-            </div>
-            <p className="text-2xl font-bold">{formatCurrency(totals.total)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-500">{config.statusLabels.true}</span>
-              <Check className="h-4 w-4 text-green-500" />
-            </div>
-            <p className="text-2xl font-bold text-green-600">{formatCurrency(totals.paid)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-500">{config.statusLabels.false}</span>
-              <Clock className="h-4 w-4 text-orange-500" />
-            </div>
-            <p className="text-2xl font-bold text-orange-600">{formatCurrency(totals.pending)}</p>
-          </CardContent>
-        </Card>
-      </div>
+      {/* KPI Cards: per le fatture emesse i collaboratori non vedono i totali */}
+      {showAmounts && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Card>
+            <CardContent className="pt-4">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-500">Totale</span>
+                <FileText className="h-4 w-4 text-blue-500" />
+              </div>
+              <p className="text-2xl font-bold">{formatCurrency(totals.total)}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-500">{config.statusLabels.true}</span>
+                <Check className="h-4 w-4 text-green-500" />
+              </div>
+              <p className="text-2xl font-bold text-green-600">{formatCurrency(totals.paid)}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-500">{config.statusLabels.false}</span>
+                <Clock className="h-4 w-4 text-orange-500" />
+              </div>
+              <p className="text-2xl font-bold text-orange-600">{formatCurrency(totals.pending)}</p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Tabella */}
       <Card>
@@ -537,9 +549,9 @@ export default function GenericInvoiceManager({ config }: GenericInvoiceManagerP
                     {config.includeCategoria && <TableHead>Categoria</TableHead>}
                     <TableHead>Data</TableHead>
                     <TableHead>Scadenza</TableHead>
-                    <TableHead className="text-right">Importo</TableHead>
+                    {showAmounts && <TableHead className="text-right">Importo</TableHead>}
                     <TableHead className="text-center">Stato</TableHead>
-                    <TableHead className="text-right">Azioni</TableHead>
+                    {canManageEmesse && <TableHead className="text-right">Azioni</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -567,41 +579,45 @@ export default function GenericInvoiceManager({ config }: GenericInvoiceManagerP
                         )}
                         <TableCell>{formatDate(invoice.dataEmissione)}</TableCell>
                         <TableCell>{formatDate(invoice.dataScadenzaPagamento)}</TableCell>
-                        <TableCell className="text-right font-semibold">
-                          {formatCurrency(getAmount(invoice))}
-                        </TableCell>
+                        {showAmounts && (
+                          <TableCell className="text-right font-semibold">
+                            {formatCurrency(getAmount(invoice))}
+                          </TableCell>
+                        )}
                         <TableCell className="text-center">
                           <Badge
                             variant={invoice[config.statusField] ? "default" : "secondary"}
-                            className="cursor-pointer"
-                            onClick={() => toggleStatus(invoice)}
+                            className={canManageEmesse ? "cursor-pointer" : "cursor-default"}
+                            onClick={canManageEmesse ? () => toggleStatus(invoice) : undefined}
                           >
                             {invoice[config.statusField]
                               ? config.statusLabels.true
                               : config.statusLabels.false}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end gap-1">
-                            {invoice.allegato && (
-                              <Button variant="ghost" size="sm" asChild>
-                                <a href={invoice.allegato} target="_blank" rel="noopener noreferrer">
-                                  <Download className="h-4 w-4" />
-                                </a>
+                        {canManageEmesse && (
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-1">
+                              {invoice.allegato && (
+                                <Button variant="ghost" size="sm" asChild>
+                                  <a href={invoice.allegato} target="_blank" rel="noopener noreferrer">
+                                    <Download className="h-4 w-4" />
+                                  </a>
+                                </Button>
+                              )}
+                              <Button variant="ghost" size="sm" onClick={() => handleEdit(invoice)}>
+                                <Pencil className="h-4 w-4" />
                               </Button>
-                            )}
-                            <Button variant="ghost" size="sm" onClick={() => handleEdit(invoice)}>
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => setInvoiceIdToDelete(invoice.id)}
-                            >
-                              <Trash2 className="h-4 w-4 text-red-500" />
-                            </Button>
-                          </div>
-                        </TableCell>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setInvoiceIdToDelete(invoice.id)}
+                              >
+                                <Trash2 className="h-4 w-4 text-red-500" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        )}
                       </TableRow>
                     );
                   })}

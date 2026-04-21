@@ -127,8 +127,9 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
             {/* Dashboard Panel */}
             {activeTab === "dashboard" && (
               <div className="space-y-8" data-testid="dashboard-panel">
-                {/* First Row - Economic Dashboard */}
-                <EconomicDashboardCard />
+                {/* Widget economici (entrate/ricavi) solo per admin: Dashboard
+                    Economica, grafico Entrate vs Uscite, grafico Incassi. */}
+                {isAdmin && <EconomicDashboardCard />}
 
                 {/* Widget Fatture in Scadenza */}
                 <div className="grid gap-6 lg:grid-cols-2">
@@ -136,11 +137,9 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
                   <CashFlowDashboard isAdmin={isAdmin} />
                 </div>
 
-                {/* Grafico Entrate/Uscite per cliente/fornitore */}
-                <EntrateUsciteChart isAdmin={isAdmin} />
+                {isAdmin && <EntrateUsciteChart isAdmin={isAdmin} />}
 
-                {/* Grafico Incassi: Manutenzione vs Lavoro Professionale */}
-                <IncassiManutenzioneChart />
+                {isAdmin && <IncassiManutenzioneChart />}
 
                 {/* Second Row - Recent Projects */}
                 <RecentProjectsTable />
@@ -180,9 +179,11 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
                       <TabsTrigger value="centro-costo" className={tabTriggerClass} data-testid="tab-centro-costo">
                         Centro Costo
                       </TabsTrigger>
-                      <TabsTrigger value="kpi" className={tabTriggerClass} data-testid="tab-kpi">
-                        KPI Dashboard
-                      </TabsTrigger>
+                      {isAdmin && (
+                        <TabsTrigger value="kpi" className={tabTriggerClass} data-testid="tab-kpi">
+                          KPI Dashboard
+                        </TabsTrigger>
+                      )}
                     </TabsList>
                   </div>
 
@@ -206,9 +207,11 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
                     <CentroCostoDashboard />
                   </TabsContent>
 
-                  <TabsContent value="kpi" className="bg-white rounded-b-2xl shadow-lg border border-t-0 border-gray-100 p-6 mt-0">
-                    <KpiDashboard />
-                  </TabsContent>
+                  {isAdmin && (
+                    <TabsContent value="kpi" className="bg-white rounded-b-2xl shadow-lg border border-t-0 border-gray-100 p-6 mt-0">
+                      <KpiDashboard />
+                    </TabsContent>
+                  )}
                 </Tabs>
               </div>
             )}

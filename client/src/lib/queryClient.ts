@@ -100,6 +100,7 @@ export const queryClient = new QueryClient({
 export function invalidateDashboard() {
   queryClient.invalidateQueries({ queryKey: ["/api/cash-flow"] });
   queryClient.invalidateQueries({ queryKey: ["/api/fatture-in-scadenza"] });
+  queryClient.invalidateQueries({ queryKey: ["fatture-in-scadenza"] });
   queryClient.invalidateQueries({ queryKey: ["pagamenti-collaboratori-pendenti"] });
   queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
   queryClient.invalidateQueries({ queryKey: ["/api/fatture-emesse"] });
@@ -107,4 +108,15 @@ export function invalidateDashboard() {
   queryClient.invalidateQueries({ queryKey: ["/api/fatture-consulenti"] });
   queryClient.invalidateQueries({ queryKey: ["/api/costi-vivi"] });
   queryClient.invalidateQueries({ queryKey: ["costi-generali"] });
+}
+
+/**
+ * Pulisce tutta la cache di react-query. Da chiamare al logout: evita che
+ * dati cachati dalla sessione precedente (con ruolo admin) restino visibili
+ * dopo un nuovo login (magari con ruolo collaboratore). Senza questa
+ * pulizia, il nuovo utente può vedere fatture emesse, importi e altre
+ * entrate che erano state caricate dall'admin.
+ */
+export function clearAllQueries() {
+  queryClient.clear();
 }

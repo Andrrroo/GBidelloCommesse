@@ -26,11 +26,13 @@ export default function EntrateUsciteChart({ isAdmin = false }: Props) {
   const { data: fattureEmesse = [] } = useQuery<FatturaEmessa[]>({
     queryKey: ["/api/fatture-emesse"],
     queryFn: async () => (await apiRequest("GET", "/api/fatture-emesse")).json(),
+    enabled: isAdmin,
   });
 
   const { data: fattureIngresso = [] } = useQuery<FatturaIngresso[]>({
     queryKey: ["/api/fatture-ingresso"],
     queryFn: async () => (await apiRequest("GET", "/api/fatture-ingresso")).json(),
+    enabled: isAdmin,
   });
 
   const { data: fattureConsulenti = [] } = useQuery<FatturaConsulente[]>({
@@ -73,6 +75,9 @@ export default function EntrateUsciteChart({ isAdmin = false }: Props) {
 
   const saldo = totaleEntrate - totaleUscite;
   const saldoPositivo = saldo >= 0;
+
+  // Guard difensivo: il widget è gated in dashboard.tsx per i non-admin.
+  if (!isAdmin) return null;
 
   return (
     <Card>

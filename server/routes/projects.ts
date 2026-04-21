@@ -14,6 +14,34 @@ import { logActivity } from '../lib/activity-logger.js';
 
 export const projectsRouter = Router();
 
+// I collaboratori non vedono alcun dato di entrata/ricavo. Rimuoviamo dai
+// metadata i campi che rappresentano il valore contrattuale/compenso atteso
+// della commessa. Applicato in GET lista, GET byId, e in POST/PUT (scartando
+// i campi in ingresso per evitare che il collaboratore li modifichi).
+const ENTRATE_METADATA_KEYS = ['importoOpere', 'importoServizio', 'percentualeParcella'] as const;
+
+function sanitizeProjectMetadata<T extends { metadata?: any }>(project: T): T {
+  if (!project.metadata) return project;
+  const metadata = { ...project.metadata };
+  for (const key of ENTRATE_METADATA_KEYS) delete metadata[key];
+  return { ...project, metadata };
+}
+
+function isAdminReq(req: any): boolean {
+  return req.session?.user?.role === 'amministratore';
+}
+
+// Rimuove dal body in input i campi metadata economici. Usato per POST/PUT
+// quando l'utente non è admin: evita che un collaboratore manipoli entrate
+// anche se nel form frontend sono nascosti.
+function stripEntrateFromBody(body: any): any {
+  if (!body || typeof body !== 'object') return body;
+  if (!body.metadata || typeof body.metadata !== 'object') return body;
+  const metadata = { ...body.metadata };
+  for (const key of ENTRATE_METADATA_KEYS) delete metadata[key];
+  return { ...body, metadata };
+}
+
 /**
  * Genera un codice univoco con prefisso CLIENTE-CITTA-YY e progressivo NN.
  * Puro (no side effects): nessun record riservato qui — è solo un'anteprima
@@ -63,7 +91,8 @@ projectsRouter.post('/api/generate-code', apiLimiter, async (req, res) => {
 projectsRouter.get('/api/projects', async (req, res) => {
   try {
     const projects = await projectsStorage.readAll();
-    res.json(projects);
+    const isAdmin = isAdminReq(req);
+    res.json(isAdmin ? projects : projects.map(sanitizeProjectMetadata));
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch projects' });
   }
@@ -75,7 +104,7 @@ projectsRouter.get('/api/projects/:id', async (req, res) => {
     if (!project) {
       return res.status(404).json({ error: 'Project not found' });
     }
-    res.json(project);
+    res.json(isAdminReq(req) ? project : sanitizeProjectMetadata(project));
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch project' });
   }
@@ -83,7 +112,8 @@ projectsRouter.get('/api/projects/:id', async (req, res) => {
 
 projectsRouter.post('/api/projects', async (req, res) => {
   try {
-    const validationResult = insertProjectSchema.superRefine(categoriaLavoroRefinement).safeParse(req.body);
+    const body = isAdminReq(req) ? req.body : stripEntrateFromBody(req.body);
+    const validationResult = insertProjectSchema.superRefine(categoriaLavoroRefinement).safeParse(body);
     if (!validationResult.success) {
       const errors = validationResult.error.flatten();
       return res.status(400).json({ error: 'Validation error', details: errors.fieldErrors });
@@ -134,7 +164,8 @@ projectsRouter.post('/api/projects', async (req, res) => {
 
 projectsRouter.put('/api/projects/:id', async (req, res) => {
   try {
-    const result = insertProjectSchema.partial().safeParse(req.body);
+    const body = isAdminReq(req) ? req.body : stripEntrateFromBody(req.body);
+    const result = insertProjectSchema.partial().safeParse(body);
     if (!result.success) return res.status(400).json({ error: 'Validation error', details: result.error.flatten().fieldErrors });
 
     // Refinement condizionale: se dopo il merge la commessa diventa "Lavoro Professionale"
@@ -194,9 +225,18 @@ projectsRouter.put('/api/projects/:id/prestazioni', async (req, res) => {
     if (!project) {
       return res.status(404).json({ error: 'Project not found' });
     }
+    // I collaboratori non possono modificare i valori economici della commessa.
+    // Scartiamo le chiavi entrate dal payload prima del merge, preservando i
+    // valori esistenti già in metadata.
+    const isAdmin = isAdminReq(req);
+    const incoming = isAdmin
+      ? parsed.data
+      : Object.fromEntries(
+          Object.entries(parsed.data).filter(([k]) => !(ENTRATE_METADATA_KEYS as readonly string[]).includes(k))
+        );
     const currentMetadata = project.metadata || {};
     const updated = await projectsStorage.update(req.params.id, {
-      metadata: { ...currentMetadata, ...parsed.data }
+      metadata: { ...currentMetadata, ...incoming }
     });
 
     await logActivity(req, {
@@ -333,11 +373,16 @@ projectsRouter.get('/api/projects/:id/summary', async (req, res) => {
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value);
 
-    // Riepilogo completo per tutti gli utenti autenticati (i collaboratori
-    // gestiscono fatture/costi/commesse quindi hanno accesso al bilancio
-    // economico della singola commessa).
+    // Per i collaboratori azzeriamo tutti i dati di entrata: totali/incassato
+    // delle fatture emesse, margine, breakdown entrate e righe "emessa" nella
+    // timeline. I costi restano interamente visibili.
+    const isAdmin = isAdminReq(req);
     res.json({
-      fattureEmesse: { count: fattureEmesse.length, totale: totaleEmesso, incassato: totaleIncassato },
+      fattureEmesse: {
+        count: fattureEmesse.length,
+        totale: isAdmin ? totaleEmesso : 0,
+        incassato: isAdmin ? totaleIncassato : 0,
+      },
       costi: {
         fattureIngresso: { count: fattureIngresso.length, totale: totaleFattureIngresso },
         fattureConsulenti: { count: fattureConsulenti.length, totale: totaleFattureConsulenti },
@@ -345,10 +390,10 @@ projectsRouter.get('/api/projects/:id/summary', async (req, res) => {
         prestazioni: { count: resources.length, totale: totalePrestazioni },
         totale: totaleCosti
       },
-      margine,
-      marginePercentuale,
-      timeline,
-      entrateBreakdown,
+      margine: isAdmin ? margine : 0,
+      marginePercentuale: isAdmin ? marginePercentuale : 0,
+      timeline: isAdmin ? timeline : timeline.filter(t => t.tipo !== 'emessa'),
+      entrateBreakdown: isAdmin ? entrateBreakdown : [],
       usciteBreakdown,
     });
   } catch (error) {

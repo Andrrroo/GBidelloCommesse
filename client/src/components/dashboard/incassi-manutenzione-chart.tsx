@@ -4,6 +4,7 @@ import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from "recha
 import { Wrench, HardHat } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { formatCurrency } from "@/lib/financial-utils";
+import { useAuth } from "@/hooks/useAuth";
 import type { FatturaEmessa, Project } from "@shared/schema";
 
 const COLORS = {
@@ -12,15 +13,23 @@ const COLORS = {
 };
 
 export default function IncassiManutenzioneChart() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "amministratore";
+
   const { data: fattureEmesse = [] } = useQuery<FatturaEmessa[]>({
     queryKey: ["/api/fatture-emesse"],
     queryFn: async () => (await apiRequest("GET", "/api/fatture-emesse")).json(),
+    enabled: isAdmin,
   });
 
   const { data: projects = [] } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
     queryFn: async () => (await apiRequest("GET", "/api/projects")).json(),
+    enabled: isAdmin,
   });
+
+  // Guard difensivo: il widget è gated in dashboard.tsx per i collaboratori.
+  if (!isAdmin) return null;
 
   // Mappa rapida projectId -> manutenzione
   const projectMap = new Map<string, boolean>();

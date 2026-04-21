@@ -64,10 +64,18 @@ router.use('/api/clients', (req: Request, res: Response, next: NextFunction) => 
   next();
 });
 
-// Fatture (emesse, ingresso, consulenti), costi generali, commesse CRUD:
+// Fatture (ingresso, consulenti), costi generali, commesse CRUD:
 // aperti ai collaboratori per l'uso quotidiano (è il loro lavoro registrare
 // fatture, costi e commesse). I dati "compromettenti" rimangono gated via
 // Cash Flow, Anagrafica clienti/collaboratori, Users, Activity Log.
+//
+// Fatture emesse: i collaboratori vedono le righe (commessa, numero, data,
+// stato) senza importi (sanitize in invoices.ts), ma non possono creare,
+// modificare o eliminare — sono entrate aziendali.
+router.use('/api/fatture-emesse', (req: Request, res: Response, next: NextFunction) => {
+  if (req.method !== 'GET') return requireAdmin(req, res, next);
+  next();
+});
 
 // Route admin-only per export/import
 router.use('/api/export', requireAdmin);

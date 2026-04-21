@@ -58,6 +58,9 @@ interface InvoiceRouteConfig<T extends FatturaBase, Schema extends z.ZodTypeAny>
   entityType: ActivityEntity;
   amountInCents: boolean;
   statusField: 'pagata' | 'incassata';
+  // Sanitizza la risposta GET per utenti non-admin. Usato per le fatture
+  // emesse: collaboratori vedono le righe senza importi.
+  sanitizeForNonAdmin?: (f: T) => Partial<T>;
   onCreate?: (created: T, input: z.infer<Schema>) => Promise<void>;
   onDelete?: (deleted: T) => Promise<void>;
 }
@@ -65,23 +68,35 @@ interface InvoiceRouteConfig<T extends FatturaBase, Schema extends z.ZodTypeAny>
 function mountInvoiceRoutes<T extends FatturaBase, Schema extends z.ZodTypeAny>(
   cfg: InvoiceRouteConfig<T, Schema>
 ) {
-  const { basePath, storage, schema, entityType, amountInCents, statusField, onCreate, onDelete } = cfg;
+  const { basePath, storage, schema, entityType, amountInCents, statusField, sanitizeForNonAdmin, onCreate, onDelete } = cfg;
   const label = basePath.replace('/api/', '');
 
-  invoicesRouter.get(basePath, async (_req, res) => {
-    try { res.json(await storage.readAll()); }
+  const applySanitize = (req: Request, f: T): T | Partial<T> => {
+    if (!sanitizeForNonAdmin) return f;
+    const isAdmin = req.session?.user?.role === 'amministratore';
+    return isAdmin ? f : sanitizeForNonAdmin(f);
+  };
+
+  invoicesRouter.get(basePath, async (req, res) => {
+    try {
+      const all = await storage.readAll();
+      res.json(all.map(f => applySanitize(req, f)));
+    }
     catch (error) { logger.error(`GET ${basePath} failed`, { err: error }); res.status(500).json({ error: `Failed to fetch ${label}` }); }
   });
 
   invoicesRouter.get(`${basePath}/:id`, async (req, res) => {
     try {
       const f = await storage.findById(req.params.id);
-      f ? res.json(f) : res.status(404).json({ error: 'Fattura not found' });
+      f ? res.json(applySanitize(req, f)) : res.status(404).json({ error: 'Fattura not found' });
     } catch (error) { logger.error(`GET ${basePath}/:id failed`, { err: error }); res.status(500).json({ error: 'Failed to fetch fattura' }); }
   });
 
   invoicesRouter.get(`${basePath}/project/:projectId`, async (req, res) => {
-    try { res.json(await storage.findByField('projectId' as keyof T, req.params.projectId as T[keyof T])); }
+    try {
+      const list = await storage.findByField('projectId' as keyof T, req.params.projectId as T[keyof T]);
+      res.json(list.map(f => applySanitize(req, f)));
+    }
     catch (error) { logger.error(`GET ${basePath}/project/:projectId failed`, { err: error }); res.status(500).json({ error: 'Failed to fetch fatture for project' }); }
   });
 
@@ -195,6 +210,12 @@ mountInvoiceRoutes({
   entityType: 'fattura_emessa',
   amountInCents: false,
   statusField: 'incassata',
+  // Collaboratori vedono la fattura (commessa, numero, data, stato, cliente)
+  // ma non gli importi: entrate aziendali nascoste.
+  sanitizeForNonAdmin: (f) => {
+    const { importo, importoIVA, importoTotale, ...rest } = f as any;
+    return rest;
+  },
 });
 
 mountInvoiceRoutes({

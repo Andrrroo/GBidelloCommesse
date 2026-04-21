@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, clearAllQueries } from "@/lib/queryClient";
 import type { UserRole } from "@shared/schema";
 
 // Re-export per retro-compatibilità (tanti componenti fanno `import { UserRole } from '@/hooks/useAuth'`)
@@ -39,6 +39,11 @@ export function useAuth() {
     } finally {
       setIsAuthenticated(false);
       setUser(null);
+      // Pulisce la cache di react-query: dati caricati sotto la sessione
+      // precedente (p.es. admin) non devono restare visibili al prossimo
+      // login (p.es. collaboratore). Senza questa pulizia si possono
+      // vedere fatture emesse, importi e altre entrate residue.
+      clearAllQueries();
     }
   };
 

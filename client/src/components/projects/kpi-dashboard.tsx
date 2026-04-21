@@ -6,6 +6,7 @@ import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, Cart
 import { TrendingUp, TrendingDown, Clock, Euro, Users, AlertTriangle } from "lucide-react";
 import { type Project } from "@shared/schema";
 import { useState } from "react";
+import { useAuth } from "@/hooks/useAuth";
 
 interface ProjectResource {
   projectId: string;
@@ -27,6 +28,8 @@ const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'
 export default function KpiDashboard() {
   const [selectedPeriod, setSelectedPeriod] = useState("all");
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear().toString());
+  const { user } = useAuth();
+  const isAdmin = user?.role === "amministratore";
 
   const { data: projects } = useQuery<Project[]>({
     queryKey: ["/api/projects"]
@@ -155,6 +158,17 @@ export default function KpiDashboard() {
           role === 'impiantista' ? 'Impiantista' : role,
     ore
   }));
+
+  // Il tab è già nascosto dal gate in dashboard.tsx per i non-admin; questo
+  // guard è ridondanza difensiva contro accessi diretti al componente.
+  if (!isAdmin) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-gray-500">
+        <AlertTriangle className="h-10 w-10 mb-3 text-gray-400" />
+        <p className="text-sm">Accesso riservato agli amministratori.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

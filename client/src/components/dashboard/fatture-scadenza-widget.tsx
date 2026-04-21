@@ -172,7 +172,10 @@ export default function FattureScadenzaWidget() {
             const status = getScadenzaStatus(dataScadenza);
             const tipoInfo = getTipoLabel(scadenza.tipo);
             const TipoIcon = tipoInfo.icon;
-            const importo = scadenza.importoTotale || scadenza.importo || 0;
+            // Importo non presente = sanitizzato dal server per non-admin
+            // (p.es. fattura emessa senza importi: il collaboratore vede la
+            // scadenza ma non il guadagno).
+            const importoRaw = scadenza.importoTotale ?? scadenza.importo;
             const soggetto = scadenza.fornitore || scadenza.consulente || scadenza.cliente || scadenza.descrizione;
 
             return (
@@ -191,7 +194,9 @@ export default function FattureScadenzaWidget() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
-                  <span className="text-sm font-semibold">{formatCurrency(importo)}</span>
+                  {importoRaw !== undefined && (
+                    <span className="text-sm font-semibold">{formatCurrency(importoRaw)}</span>
+                  )}
                   <Badge variant={status.variant} className="text-xs">
                     {status.label}
                   </Badge>

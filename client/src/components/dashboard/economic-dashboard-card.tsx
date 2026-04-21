@@ -14,11 +14,19 @@ import {
   TrendingUp, TrendingDown, DollarSign, Briefcase,
   PieChart as PieChartIcon, BarChart3, Target, AlertCircle
 } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
 
 export default function EconomicDashboardCard() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "amministratore";
   const { data: projects = [], isLoading } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
+    enabled: isAdmin,
   });
+
+  // Guard difensivo: il tab/widget è già gated in dashboard.tsx per i
+  // collaboratori, ma preveniamo render accidentali di valori economici.
+  if (!isAdmin) return null;
 
   if (isLoading) {
     return (

@@ -50,6 +50,7 @@ dashboardRouter.get('/api/pagamenti-collaboratori-pendenti', async (req, res) =>
 
 dashboardRouter.get('/api/fatture-in-scadenza', async (req, res) => {
   try {
+    const isAdmin = req.session?.user?.role === 'amministratore';
     const oggi = new Date();
     const tra30giorni = new Date();
     tra30giorni.setDate(oggi.getDate() + 30);
@@ -64,10 +65,17 @@ dashboardRouter.get('/api/fatture-in-scadenza', async (req, res) => {
       .filter(f => !f.pagata && new Date(f.dataScadenzaPagamento) <= tra30giorni)
       .map(f => ({ ...f, tipo: 'consulente' as const }));
 
-    const fattureEmesse = await fattureEmesseStorage.readAll();
-    const fattureEmesseInScadenza = fattureEmesse
+    // Fatture emesse in scadenza: visibili a tutti (il collaboratore deve
+    // sapere che una fattura a un cliente è in scadenza), ma per i non-admin
+    // omettiamo gli importi (importo / importoIVA / importoTotale) — stesso
+    // approccio di /api/fatture-emesse.
+    const fattureEmesseInScadenza = (await fattureEmesseStorage.readAll())
       .filter(f => !f.incassata && new Date(f.dataScadenzaPagamento) <= tra30giorni)
-      .map(f => ({ ...f, tipo: 'emessa' as const }));
+      .map(f => {
+        if (isAdmin) return { ...f, tipo: 'emessa' as const };
+        const { importo, importoIVA, importoTotale, ...rest } = f;
+        return { ...rest, tipo: 'emessa' as const };
+      });
 
     const costiGenerali = await costiGeneraliStorage.readAll();
     const costiGeneraliInScadenza = costiGenerali
