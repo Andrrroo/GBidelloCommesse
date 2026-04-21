@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Loader2, Shield } from "lucide-react";
+import { Loader2, Shield, Eye, EyeOff } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/useDocumentTitle";
 
 const loginSchema = z.object({
@@ -27,6 +27,7 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
   useDocumentTitle("Accedi");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
 
   const form = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
@@ -123,13 +124,27 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
                   <FormItem>
                     <FormLabel>Password</FormLabel>
                     <FormControl>
-                      <Input
-                        {...field}
-                        type="password"
-                        placeholder="Inserisci password"
-                        disabled={isLoading}
-                        data-testid="input-password"
-                      />
+                      <div className="relative">
+                        <Input
+                          {...field}
+                          type={showPassword ? "text" : "password"}
+                          placeholder="Inserisci password"
+                          disabled={isLoading}
+                          className="pr-10"
+                          data-testid="input-password"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword(v => !v)}
+                          disabled={isLoading}
+                          aria-label={showPassword ? "Nascondi password" : "Mostra password"}
+                          title={showPassword ? "Nascondi password" : "Mostra password"}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-500 hover:text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
+                          data-testid="toggle-password-visibility"
+                        >
+                          {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                      </div>
                     </FormControl>
                     <FormMessage />
                   </FormItem>

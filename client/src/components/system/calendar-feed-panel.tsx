@@ -9,7 +9,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Calendar, Copy, RefreshCw, Check, Loader2, Smartphone } from "lucide-react";
+import { Calendar, Copy, RefreshCw, Check, Loader2, Smartphone, Eye, EyeOff } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
@@ -23,6 +23,10 @@ export default function CalendarFeedPanel() {
   const queryClient = useQueryClient();
   const [copied, setCopied] = useState(false);
   const [showRegenerateConfirm, setShowRegenerateConfirm] = useState(false);
+  // URL e QR code sono nascosti di default per evitare che qualcuno di
+  // passaggio davanti allo schermo (o uno screenshot condiviso) veda il
+  // token. L'utente deve cliccare "Mostra" per rivelarli.
+  const [revealed, setRevealed] = useState(false);
 
   const { data, isLoading } = useQuery<CalendarToken>({
     queryKey: ["/api/calendar/token"],
@@ -76,12 +80,44 @@ export default function CalendarFeedPanel() {
               <Loader2 className="h-4 w-4 animate-spin" />
               Caricamento…
             </div>
+          ) : !revealed ? (
+            /* Stato nascosto: un solo bottone "Mostra" al centro.
+               Protegge il token da sguardi casuali / screenshot. */
+            <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-gray-300 bg-gray-50/50 py-8">
+              <div className="flex items-center gap-2 text-sm text-gray-600">
+                <EyeOff className="h-4 w-4" />
+                URL e QR code nascosti
+              </div>
+              <Button
+                onClick={() => setRevealed(true)}
+                className="gap-2"
+                data-testid="reveal-calendar-feed"
+              >
+                <Eye className="h-4 w-4" />
+                Mostra URL calendario
+              </Button>
+              <p className="text-xs text-gray-500 text-center max-w-sm px-4">
+                Tienilo nascosto se condividi lo schermo o fai screenshot: chiunque veda
+                l'URL può sottoscrivere il tuo calendario.
+              </p>
+            </div>
           ) : (
             <>
               <div className="grid gap-6 md:grid-cols-[1fr_auto] md:items-start">
                 {/* Colonna sinistra: URL + istruzioni copia */}
                 <div className="space-y-2 min-w-0">
-                  <label className="text-xs font-medium text-gray-600">URL del feed iCal</label>
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-xs font-medium text-gray-600">URL del feed iCal</label>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setRevealed(false)}
+                      className="h-7 gap-1.5 text-xs text-gray-500"
+                    >
+                      <EyeOff className="h-3.5 w-3.5" />
+                      Nascondi
+                    </Button>
+                  </div>
                   <div className="flex gap-2">
                     <Input
                       readOnly
