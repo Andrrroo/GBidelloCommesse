@@ -59,11 +59,11 @@ export default function EntrateUsciteChart({ isAdmin = false }: Props) {
   }
   if (isAdmin) {
     for (const f of fattureConsulenti) {
-      const key = `${f.consulente} (Consulente)`;
+      const key = f.consulente || "Non specificato";
       mapFornitori.set(key, (mapFornitori.get(key) || 0) + f.importo);
     }
     for (const c of costiGenerali) {
-      const key = `${c.fornitore} (Costo generale)`;
+      const key = c.fornitore || "Non specificato";
       mapFornitori.set(key, (mapFornitori.get(key) || 0) + c.importo);
     }
   }
