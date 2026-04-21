@@ -80,10 +80,10 @@ export default function FattureScadenzaWidget() {
 
   if (isLoading || isLoadingPagamenti) {
     return (
-      <Card className="border-orange-200 bg-orange-50/50">
+      <Card className="border-gray-200 bg-gray-50/50">
         <CardHeader className="pb-2">
           <CardTitle className="text-lg flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5 text-orange-500" />
+            <Calendar className="h-5 w-5 text-gray-400" />
             Scadenze Imminenti
           </CardTitle>
         </CardHeader>
@@ -97,12 +97,41 @@ export default function FattureScadenzaWidget() {
     );
   }
 
+  // Colore della card in base all'urgenza:
+  // - verde: nessuna scadenza (né pagamenti pendenti)
+  // - rosso: almeno una scadenza entro 7 giorni (comprese quelle già scadute)
+  // - arancione: solo scadenze oltre 7 giorni, o pagamenti pendenti senza data
+  const tra7giorni = new Date(oggi);
+  tra7giorni.setDate(oggi.getDate() + 7);
+  const scadenzeEntro7Giorni = scadenze.filter(s => {
+    const data = s.dataScadenzaPagamento || s.dataScadenza;
+    if (!data) return false;
+    const d = new Date(data);
+    d.setHours(0, 0, 0, 0);
+    return d <= tra7giorni;
+  }).length;
+
+  const urgency: 'green' | 'red' | 'orange' =
+    totalCount === 0 ? 'green' :
+    scadenzeEntro7Giorni > 0 ? 'red' :
+    'orange';
+
+  const cardClass =
+    urgency === 'green' ? 'border-green-200 bg-green-50/50' :
+    urgency === 'red' ? 'border-red-200 bg-red-50/50' :
+    'border-orange-200 bg-orange-50/50';
+  const iconClass =
+    urgency === 'green' ? 'text-green-500' :
+    urgency === 'red' ? 'text-red-500' :
+    'text-orange-500';
+  const HeaderIcon = urgency === 'green' ? Calendar : AlertTriangle;
+
   if (totalCount === 0) {
     return (
-      <Card className="border-green-200 bg-green-50/50">
+      <Card className={cardClass}>
         <CardHeader className="pb-2">
           <CardTitle className="text-lg flex items-center gap-2">
-            <Calendar className="h-5 w-5 text-green-500" />
+            <HeaderIcon className={`h-5 w-5 ${iconClass}`} />
             Scadenze Imminenti
           </CardTitle>
         </CardHeader>
@@ -113,22 +142,15 @@ export default function FattureScadenzaWidget() {
     );
   }
 
-  const scaduteCount = scadenze.filter(s => {
-    const data = s.dataScadenzaPagamento || s.dataScadenza;
-    return data && new Date(data) < oggi;
-  }).length;
-
-  const hasAlarms = scaduteCount > 0 || pagamentiPendenti.length > 0;
-
   return (
-    <Card className={`${scaduteCount > 0 ? 'border-red-200 bg-red-50/50' : hasAlarms ? 'border-orange-200 bg-orange-50/50' : 'border-gray-200 bg-gray-50/50'}`}>
+    <Card className={cardClass}>
       <CardHeader className="pb-2">
         <CardTitle className="text-lg flex items-center justify-between">
           <span className="flex items-center gap-2">
-            <AlertTriangle className={`h-5 w-5 ${scaduteCount > 0 ? 'text-red-500' : 'text-orange-500'}`} />
+            <HeaderIcon className={`h-5 w-5 ${iconClass}`} />
             Scadenze Imminenti
           </span>
-          <Badge variant={scaduteCount > 0 ? "destructive" : "secondary"}>
+          <Badge variant={urgency === 'red' ? 'destructive' : 'secondary'}>
             {totalCount}
           </Badge>
         </CardTitle>
