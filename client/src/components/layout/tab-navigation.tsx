@@ -38,7 +38,7 @@ export default function TabNavigation({ activeTab, onTabChange, isAdmin }: TabNa
 
   return (
     <nav className="bg-g2-accent border-b-2 border-primary" role="tablist" data-testid="tab-navigation">
-      <div className="flex justify-center overflow-x-auto">
+      <div className="flex justify-center">
         {visibleTabs.map((tab) => {
           const Icon = tab.icon;
           return (

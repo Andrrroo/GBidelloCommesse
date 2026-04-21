@@ -32,7 +32,7 @@ interface PagamentoPendente {
 
 export default function FattureScadenzaWidget() {
   const { data: scadenze = [], isLoading } = useQuery<FatturaScadenza[]>({
-    queryKey: ["fatture-in-scadenza"],
+    queryKey: ["/api/fatture-in-scadenza"],
     queryFn: async () => {
       const response = await apiRequest("GET", "/api/fatture-in-scadenza");
       if (!response.ok) throw new Error("Failed to fetch");
@@ -42,7 +42,7 @@ export default function FattureScadenzaWidget() {
   });
 
   const { data: pagamentiPendenti = [], isLoading: isLoadingPagamenti } = useQuery<PagamentoPendente[]>({
-    queryKey: ["pagamenti-collaboratori-pendenti"],
+    queryKey: ["/api/pagamenti-collaboratori-pendenti"],
     queryFn: async () => {
       const response = await apiRequest("GET", "/api/pagamenti-collaboratori-pendenti");
       if (!response.ok) throw new Error("Failed to fetch");

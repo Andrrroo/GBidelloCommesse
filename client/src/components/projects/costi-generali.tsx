@@ -59,7 +59,7 @@ export default function CostiGenerali() {
   });
 
   const { data: costi = [], isLoading } = useQuery<CostoGenerale[]>({
-    queryKey: ["costi-generali"],
+    queryKey: ["/api/costi-generali"],
     queryFn: async () => {
       const response = await apiRequest("GET", "/api/costi-generali");
       if (!response.ok) throw new Error("Failed to fetch");
@@ -74,7 +74,7 @@ export default function CostiGenerali() {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["costi-generali"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/costi-generali"] });
       invalidateDashboard();
       toast({ title: "Successo", description: "Costo creato con successo" });
       resetForm();
@@ -91,7 +91,7 @@ export default function CostiGenerali() {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["costi-generali"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/costi-generali"] });
       invalidateDashboard();
       toast({ title: "Successo", description: "Costo aggiornato con successo" });
       resetForm();
@@ -107,7 +107,7 @@ export default function CostiGenerali() {
       if (!response.ok) throw new Error("Failed to delete");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["costi-generali"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/costi-generali"] });
       invalidateDashboard();
       toast({ title: "Successo", description: "Costo eliminato con successo" });
     },

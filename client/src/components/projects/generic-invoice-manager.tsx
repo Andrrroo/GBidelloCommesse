@@ -316,8 +316,11 @@ export default function GenericInvoiceManager({ config }: GenericInvoiceManagerP
   };
 
   // Helper definiti PRIMA di sort/filter perché li usiamo lì.
+  // `?? 0` difensivo: per non-admin sulle fatture emesse il backend rimuove
+  // importo/importoIVA/importoTotale. Senza fallback `undefined / 100 = NaN`
+  // propaga nei reducer dei totali.
   const getAmount = (inv: Invoice) => {
-    const rawAmount = config.includeIVA ? (inv.importoTotale || inv.importo) : inv.importo;
+    const rawAmount = (config.includeIVA ? (inv.importoTotale ?? inv.importo) : inv.importo) ?? 0;
     return config.amountInCents ? rawAmount / 100 : rawAmount;
   };
 

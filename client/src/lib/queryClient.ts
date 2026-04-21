@@ -100,14 +100,13 @@ export const queryClient = new QueryClient({
 export function invalidateDashboard() {
   queryClient.invalidateQueries({ queryKey: ["/api/cash-flow"] });
   queryClient.invalidateQueries({ queryKey: ["/api/fatture-in-scadenza"] });
-  queryClient.invalidateQueries({ queryKey: ["fatture-in-scadenza"] });
-  queryClient.invalidateQueries({ queryKey: ["pagamenti-collaboratori-pendenti"] });
+  queryClient.invalidateQueries({ queryKey: ["/api/pagamenti-collaboratori-pendenti"] });
   queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
   queryClient.invalidateQueries({ queryKey: ["/api/fatture-emesse"] });
   queryClient.invalidateQueries({ queryKey: ["/api/fatture-ingresso"] });
   queryClient.invalidateQueries({ queryKey: ["/api/fatture-consulenti"] });
   queryClient.invalidateQueries({ queryKey: ["/api/costi-vivi"] });
-  queryClient.invalidateQueries({ queryKey: ["costi-generali"] });
+  queryClient.invalidateQueries({ queryKey: ["/api/costi-generali"] });
 }
 
 /**

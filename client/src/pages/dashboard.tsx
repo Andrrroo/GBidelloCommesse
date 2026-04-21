@@ -102,7 +102,7 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
   // L'underline è sempre presente ma `scale-x-0` → cresce dal centro con
   // transizione 200ms quando la tab diventa attiva. Colore testo/bg sfuma
   // con `transition-colors` per un passaggio meno rigido.
-  const tabTriggerClass = "relative px-4 py-3 text-sm font-medium hover:bg-gray-50 rounded-none whitespace-nowrap transition-colors duration-200 data-[state=active]:text-secondary data-[state=active]:bg-secondary/5 after:content-[''] after:absolute after:inset-x-0 after:-bottom-[2px] after:h-[2px] after:bg-secondary after:scale-x-0 after:origin-center after:transition-transform after:duration-200 data-[state=active]:after:scale-x-100";
+  const tabTriggerClass = "relative px-4 py-3 text-sm font-medium hover:bg-gray-50 rounded-none whitespace-nowrap transition-colors duration-200 data-[state=active]:text-secondary data-[state=active]:bg-secondary/5 data-[state=active]:hover:bg-secondary/5 after:content-[''] after:absolute after:inset-x-0 after:-bottom-[2px] after:h-[2px] after:bg-secondary after:scale-x-0 after:origin-center after:transition-transform after:duration-200 data-[state=active]:after:scale-x-100";
 
   return (
     <div className="min-h-screen bg-g2-accent">
