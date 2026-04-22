@@ -274,6 +274,12 @@ const collaboratoreBaseSchema = z.object({
   // Default false → consulente esterno, gestito via Fatture Consulenti.
   isDipendente: z.boolean().default(false),
   stipendioMensile: z.number().positive("Lo stipendio deve essere positivo").optional(),
+  // Codice fiscale (opzionale, normalizzato maiuscolo) — usato per matchare
+  // un dipendente con una busta paga PDF caricata (parser usa il CF estratto).
+  codiceFiscale: z.string()
+    .regex(/^[A-Z0-9]{16}$/, "Codice fiscale: 16 caratteri alfanumerici maiuscoli")
+    .optional()
+    .or(z.literal('')),
   note: z.string().optional(),
 });
 

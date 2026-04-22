@@ -1,9 +1,33 @@
 import { Router } from 'express';
 import { randomUUID } from 'crypto';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
 import { costiViviStorage, costiGeneraliStorage, collaboratoriStorage } from '../storage.js';
 import { insertCostoVivoSchema, insertCostoGeneraleSchema } from '@shared/schema';
+import type { CostoGenerale } from '@shared/schema';
 import { logActivity } from '../lib/activity-logger.js';
 import { logger } from '../lib/logger.js';
+import { parseBustaPagaPdf } from '../lib/payroll-pdf-parser.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const uploadsPdfDir = path.join(__dirname, '..', '..', 'uploads', 'pdf');
+if (!fs.existsSync(uploadsPdfDir)) {
+  fs.mkdirSync(uploadsPdfDir, { recursive: true });
+}
+
+// Multer in-memory per l'upload multi-PDF: il buffer ci serve per il parser
+// e solo DOPO lo scriviamo su disco (se il parse va a buon fine).
+const memoryUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024, files: 50 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype === 'application/pdf') cb(null, true);
+    else cb(new Error('Solo file PDF sono consentiti'));
+  },
+});
 
 export const costsRouter = Router();
 
@@ -157,6 +181,214 @@ costsRouter.post('/api/costi-generali', async (req, res) => {
 // parte da `ensurePayrollBootstrap` in `lib/payroll-auto-gen.ts` quando il
 // Collaboratore viene salvato dipendente+stipendio; il cron `runPayrollAutoGen`
 // crea ricorsivamente le buste paga dei mesi successivi.
+
+// Upload multi-PDF buste paga — flusso a 2 fasi:
+//   1) POST .../upload-buste-paga      → parsea ogni PDF, salva su disco,
+//      suggerisce il match con un dipendente per CF, NON modifica i costi.
+//      Ritorna `previews[]` (admin può poi correggere campi in UI).
+//   2) POST .../upload-buste-paga/commit → riceve gli items finalizzati e
+//      crea/aggiorna i costi stipendi. L'admin può confermare o correggere.
+
+// Guardia comune: solo admin, regex su fileUrl per evitare path traversal.
+const UPLOADED_PDF_URL_REGEX = /^\/uploads\/pdf\/[A-Za-z0-9._-]+\.pdf$/;
+
+costsRouter.post(
+  '/api/costi-generali/upload-buste-paga',
+  memoryUpload.array('files', 50),
+  async (req, res) => {
+    if (!isAdminReq(req)) {
+      return res.status(403).json({ error: 'Solo gli amministratori possono caricare buste paga' });
+    }
+    const files = (req.files as Express.Multer.File[] | undefined) ?? [];
+    if (files.length === 0) return res.status(400).json({ error: 'Nessun file caricato' });
+
+    const collaboratori = await collaboratoriStorage.readAll();
+    const cfIndex = new Map<string, typeof collaboratori[number]>();
+    for (const c of collaboratori) {
+      if (c.codiceFiscale) cfIndex.set(c.codiceFiscale.toUpperCase(), c);
+    }
+
+    const previews: Array<{
+      fileUrl: string;
+      filename: string;
+      // Dati estratti dal parser — editabili dall'admin in UI.
+      codiceFiscale: string;
+      periodo: string;
+      meseLabel: string;
+      nettoInBusta: number;
+      nomePdf: string | null;
+      // Match automatico via CF; null se da scegliere manualmente.
+      collaboratoreId: string | null;
+      collaboratoreNome: string | null;
+      // Warning/info non bloccanti (es. "match non trovato, scegli manualmente").
+      warning: string | null;
+    }> = [];
+    const failed: Array<{ filename: string; reason: string }> = [];
+
+    for (const file of files) {
+      try {
+        const parsed = await parseBustaPagaPdf(file.buffer);
+        const cf = parsed.codiceFiscale.toUpperCase();
+
+        // Salvo comunque il file: il commit userà lo stesso fileUrl. Se
+        // l'admin annulla, resta come file orfano (cleanup futuro via script).
+        const uniqueName = `${Date.now()}-${randomUUID().slice(0, 8)}.pdf`;
+        const diskPath = path.join(uploadsPdfDir, uniqueName);
+        await fs.promises.writeFile(diskPath, file.buffer);
+        const fileUrl = `/uploads/pdf/${uniqueName}`;
+
+        const collab = cfIndex.get(cf);
+        let collaboratoreId: string | null = null;
+        let collaboratoreNome: string | null = null;
+        let warning: string | null = null;
+        if (!collab) {
+          warning = `Nessun dipendente con codice fiscale ${cf}. Seleziona manualmente.`;
+        } else if (!collab.active) {
+          warning = `${collab.nome} ${collab.cognome} è disattivato.`;
+          collaboratoreId = collab.id;
+          collaboratoreNome = `${collab.nome} ${collab.cognome}`.trim();
+        } else if (!collab.isDipendente) {
+          warning = `${collab.nome} ${collab.cognome} non è marcato come dipendente.`;
+          collaboratoreId = collab.id;
+          collaboratoreNome = `${collab.nome} ${collab.cognome}`.trim();
+        } else {
+          collaboratoreId = collab.id;
+          collaboratoreNome = `${collab.nome} ${collab.cognome}`.trim();
+        }
+
+        previews.push({
+          fileUrl,
+          filename: file.originalname,
+          codiceFiscale: cf,
+          periodo: parsed.periodo,
+          meseLabel: parsed.meseLabel,
+          nettoInBusta: parsed.nettoInBusta,
+          nomePdf: parsed.nomePdf ?? null,
+          collaboratoreId,
+          collaboratoreNome,
+          warning,
+        });
+      } catch (err: any) {
+        failed.push({ filename: file.originalname, reason: err?.message || 'Errore parsing PDF' });
+      }
+    }
+
+    res.json({ previews, failed });
+  }
+);
+
+// Commit dopo review. Riceve l'array finalizzato dall'admin (fileUrl +
+// collaboratoreId + periodo + nettoInBusta) e crea/aggiorna i costi.
+costsRouter.post('/api/costi-generali/upload-buste-paga/commit', async (req, res) => {
+  try {
+    if (!isAdminReq(req)) {
+      return res.status(403).json({ error: 'Solo gli amministratori possono confermare le buste paga' });
+    }
+    const items = Array.isArray(req.body?.items) ? req.body.items : null;
+    if (!items || items.length === 0) {
+      return res.status(400).json({ error: 'Nessuna busta paga da confermare' });
+    }
+
+    const collaboratori = await collaboratoriStorage.readAll();
+    const costi = await costiGeneraliStorage.readAll();
+    const todayIso = new Date().toISOString().slice(0, 10);
+
+    const processed: Array<{ collaboratoreId: string; fornitore: string; periodo: string; importo: number; action: 'updated' | 'created'; costoId: string }> = [];
+    const failed: Array<{ fileUrl: string; reason: string }> = [];
+
+    const MESI_IT = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
+    const meseLabel = (periodo: string) => {
+      const [y, m] = periodo.split('-').map(Number);
+      return `${MESI_IT[m - 1]} ${y}`;
+    };
+
+    for (const raw of items) {
+      try {
+        const fileUrl = String(raw?.fileUrl || '');
+        const collaboratoreId = String(raw?.collaboratoreId || '');
+        const periodo = String(raw?.periodo || '');
+        const nettoInBusta = Number(raw?.nettoInBusta);
+
+        if (!UPLOADED_PDF_URL_REGEX.test(fileUrl)) throw new Error('fileUrl non valido');
+        if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(periodo)) throw new Error('periodo non valido (YYYY-MM)');
+        if (!isFinite(nettoInBusta) || nettoInBusta <= 0) throw new Error('nettoInBusta non valido');
+        if (!collaboratoreId) throw new Error('collaboratoreId mancante');
+
+        const collab = collaboratori.find(c => c.id === collaboratoreId);
+        if (!collab) throw new Error('dipendente non trovato');
+        if (!collab.active || !collab.isDipendente) throw new Error('il collaboratore non è un dipendente attivo');
+
+        // Verifico che il file esista su disco (evita orfani forgiati).
+        const diskPath = path.join(uploadsPdfDir, path.basename(fileUrl));
+        if (!fs.existsSync(diskPath)) throw new Error('file PDF non più disponibile');
+
+        const existing = costi.find(
+          c => c.categoria === 'stipendi' && c.collaboratoreId === collab.id && c.periodo === periodo
+        );
+        const fornitoreName = `${collab.nome} ${collab.cognome}`.trim();
+
+        if (existing) {
+          const updated = await costiGeneraliStorage.update(existing.id, {
+            importo: nettoInBusta,
+            allegato: fileUrl,
+            pagato: true,
+            dataPagamento: todayIso,
+          });
+          if (!updated) throw new Error('aggiornamento costo fallito');
+          processed.push({
+            collaboratoreId: collab.id,
+            fornitore: updated.fornitore,
+            periodo,
+            importo: nettoInBusta,
+            action: 'updated',
+            costoId: updated.id,
+          });
+        } else {
+          const nuovo: CostoGenerale = {
+            id: randomUUID(),
+            categoria: 'stipendi',
+            fornitore: fornitoreName,
+            descrizione: `Busta paga ${meseLabel(periodo)}`,
+            data: todayIso,
+            dataScadenza: todayIso,
+            importo: nettoInBusta,
+            pagato: true,
+            dataPagamento: todayIso,
+            allegato: fileUrl,
+            collaboratoreId: collab.id,
+            periodo,
+          };
+          await costiGeneraliStorage.create(nuovo);
+          costi.push(nuovo);
+          processed.push({
+            collaboratoreId: collab.id,
+            fornitore: fornitoreName,
+            periodo,
+            importo: nettoInBusta,
+            action: 'created',
+            costoId: nuovo.id,
+          });
+        }
+      } catch (err: any) {
+        failed.push({ fileUrl: String(raw?.fileUrl || ''), reason: err?.message || 'errore commit' });
+      }
+    }
+
+    if (processed.length > 0) {
+      await logActivity(req, {
+        action: 'create',
+        entityType: 'costo_generale',
+        entityId: `upload-buste-paga-${Date.now()}`,
+        details: `Upload buste paga confermato: ${processed.length} create/aggiornate, ${failed.length} fallite`,
+      });
+    }
+
+    res.json({ processed, failed });
+  } catch (err) {
+    logger.error('Commit buste paga fallito', { err });
+    res.status(500).json({ error: 'Errore durante il commit' });
+  }
+});
 
 async function handleUpdateCostoGenerale(req: import('express').Request, res: import('express').Response) {
   try {

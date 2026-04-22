@@ -34,6 +34,7 @@ export default function CollaboratoriManagement() {
     active: true,
     isDipendente: false,
     stipendioMensile: "" as string | number,
+    codiceFiscale: "",
     note: "",
   };
   const [formData, setFormData] = useState(emptyForm);
@@ -107,6 +108,7 @@ export default function CollaboratoriManagement() {
       active: c.active,
       isDipendente: c.isDipendente ?? false,
       stipendioMensile: c.stipendioMensile ?? "",
+      codiceFiscale: c.codiceFiscale || "",
       note: c.note || "",
     });
     setIsDialogOpen(true);
@@ -129,6 +131,13 @@ export default function CollaboratoriManagement() {
       cleanData.stipendioMensile = parseFloat(String(formData.stipendioMensile)) || 0;
     } else {
       delete cleanData.stipendioMensile;
+    }
+
+    // codiceFiscale: normalizzato maiuscolo, vuoto → rimosso (campo opzionale).
+    if (cleanData.codiceFiscale) {
+      cleanData.codiceFiscale = String(cleanData.codiceFiscale).trim().toUpperCase();
+    } else {
+      delete cleanData.codiceFiscale;
     }
 
     if (editing) {
@@ -349,6 +358,27 @@ export default function CollaboratoriManagement() {
                       required={formData.isDipendente}
                     />
                   </div>
+                </div>
+                <div className="space-y-2">
+                  <Label
+                    htmlFor="codiceFiscale"
+                    className={formData.isDipendente ? "text-blue-900" : "text-gray-400"}
+                  >
+                    Codice Fiscale
+                  </Label>
+                  <Input
+                    id="codiceFiscale"
+                    type="text"
+                    maxLength={16}
+                    className="uppercase font-mono tracking-wide"
+                    placeholder={formData.isDipendente ? "es. RSSMRA80A01H501Z" : "—"}
+                    disabled={!formData.isDipendente}
+                    value={formData.codiceFiscale}
+                    onChange={(e) => setFormData(prev => ({ ...prev, codiceFiscale: e.target.value.toUpperCase() }))}
+                  />
+                  <p className="text-xs text-blue-700/70">
+                    Usato per abbinare i PDF delle buste paga caricati in Costi Generali.
+                  </p>
                 </div>
               </div>
 

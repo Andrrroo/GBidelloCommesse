@@ -13,7 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, invalidateDashboard } from "@/lib/queryClient";
-import { Plus, Pencil, Trash2, Building, Check, Clock, Euro, Download, ArrowUp, ArrowDown, X, Users, RefreshCcw } from "lucide-react";
+import { Plus, Pencil, Trash2, Building, Check, Clock, Euro, Download, ArrowUp, ArrowDown, X, Users, RefreshCcw, Upload } from "lucide-react";
 import type { CostoGenerale, Collaboratore } from "@shared/schema";
 import { formatCurrency, formatCurrencyFromCents, formatDate, toCents, fromCents } from "@/lib/financial-utils";
 import { usePagination } from "@/hooks/usePagination";
@@ -53,6 +53,7 @@ type Periodicita = (typeof PERIODICITA_OPTIONS)[number]["value"];
 
 export default function CostiGenerali() {
   const tableTopRef = useRef<HTMLDivElement>(null);
+  const bustePagaInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { isAdmin } = useAuth();
@@ -153,6 +154,110 @@ export default function CostiGenerali() {
     },
     onError: () => {
       toast({ title: "Errore", description: "Errore durante l'eliminazione", variant: "destructive" });
+    }
+  });
+
+  // Upload a 2 fasi:
+  //  1) uploadBustePagaMutation: invia i PDF, il server li parsea e ritorna
+  //     un array di preview con i dati estratti (editabili in UI).
+  //  2) commitBustePagaMutation: invia le preview finalizzate, il server
+  //     crea/aggiorna i record stipendi.
+  type PreviewItem = {
+    fileUrl: string;
+    filename: string;
+    codiceFiscale: string;
+    periodo: string;
+    meseLabel: string;
+    nettoInBusta: number;
+    nomePdf: string | null;
+    collaboratoreId: string | null;
+    collaboratoreNome: string | null;
+    warning: string | null;
+    // Marker locale: se true l'admin vuole includere questa riga nel commit.
+    include: boolean;
+  };
+  const [previewItems, setPreviewItems] = useState<PreviewItem[]>([]);
+  const [previewFailed, setPreviewFailed] = useState<Array<{ filename: string; reason: string }>>([]);
+  const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
+
+  const uploadBustePagaMutation = useMutation({
+    mutationFn: async (files: FileList) => {
+      const formData = new FormData();
+      Array.from(files).forEach(f => formData.append("files", f));
+      const response = await fetch("/api/costi-generali/upload-buste-paga", {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ error: "Errore upload" }));
+        throw new Error(err.error || "Errore upload");
+      }
+      return response.json() as Promise<{
+        previews: Omit<PreviewItem, "include">[];
+        failed: Array<{ filename: string; reason: string }>;
+      }>;
+    },
+    onSuccess: (data) => {
+      const items: PreviewItem[] = data.previews.map(p => ({ ...p, include: true }));
+      setPreviewItems(items);
+      setPreviewFailed(data.failed);
+      if (items.length === 0 && data.failed.length > 0) {
+        // Nessuna preview, mostro solo toast con errori e non apro dialog.
+        toast({
+          title: "Nessun PDF elaborato",
+          description: data.failed.map(f => `${f.filename}: ${f.reason}`).join("\n"),
+          variant: "destructive",
+        });
+      } else {
+        setPreviewDialogOpen(true);
+      }
+    },
+    onError: (e: Error) => {
+      toast({ title: "Errore upload", description: e.message, variant: "destructive" });
+    }
+  });
+
+  const commitBustePagaMutation = useMutation({
+    mutationFn: async (items: PreviewItem[]) => {
+      const payload = {
+        items: items.filter(i => i.include).map(i => ({
+          fileUrl: i.fileUrl,
+          collaboratoreId: i.collaboratoreId,
+          periodo: i.periodo,
+          nettoInBusta: i.nettoInBusta,
+        })),
+      };
+      const response = await apiRequest("POST", "/api/costi-generali/upload-buste-paga/commit", payload);
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ error: "Errore commit" }));
+        throw new Error(err.error || "Errore commit");
+      }
+      return response.json() as Promise<{
+        processed: Array<{ fornitore: string; periodo: string; importo: number; action: "updated" | "created" }>;
+        failed: Array<{ fileUrl: string; reason: string }>;
+      }>;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/costi-generali"] });
+      invalidateDashboard();
+      const okCount = data.processed.length;
+      const koCount = data.failed.length;
+      if (koCount === 0) {
+        toast({ title: "Buste paga confermate", description: `${okCount} ${okCount === 1 ? "record" : "record"} aggiornati/creati` });
+      } else {
+        toast({
+          title: `${okCount} OK, ${koCount} falliti`,
+          description: data.failed.map(f => f.reason).join("\n"),
+          variant: "destructive",
+        });
+      }
+      setPreviewDialogOpen(false);
+      setPreviewItems([]);
+      setPreviewFailed([]);
+    },
+    onError: (e: Error) => {
+      toast({ title: "Errore conferma", description: e.message, variant: "destructive" });
     }
   });
 
@@ -373,10 +478,40 @@ export default function CostiGenerali() {
             </Button>
           )}
         </div>
-        <Button onClick={() => setIsDialogOpen(true)}>
-          <Plus className="h-4 w-4 mr-1" />
-          Nuovo Costo Generale
-        </Button>
+        <div className="flex gap-2">
+          {admin && (
+            <>
+              <input
+                ref={bustePagaInputRef}
+                type="file"
+                accept="application/pdf"
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  const files = e.target.files;
+                  if (files && files.length > 0) {
+                    uploadBustePagaMutation.mutate(files);
+                  }
+                  // reset in modo da poter ricaricare lo stesso file se serve
+                  if (bustePagaInputRef.current) bustePagaInputRef.current.value = "";
+                }}
+              />
+              <Button
+                variant="outline"
+                onClick={() => bustePagaInputRef.current?.click()}
+                disabled={uploadBustePagaMutation.isPending}
+                title="Carica uno o più PDF di buste paga per aggiornare automaticamente gli importi del mese"
+              >
+                <Upload className="h-4 w-4 mr-1" />
+                {uploadBustePagaMutation.isPending ? "Carico..." : "Carica buste paga"}
+              </Button>
+            </>
+          )}
+          <Button onClick={() => setIsDialogOpen(true)}>
+            <Plus className="h-4 w-4 mr-1" />
+            Nuovo Costo Generale
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -789,6 +924,166 @@ export default function CostiGenerali() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Dialog di review buste paga prima del commit */}
+      <Dialog
+        open={previewDialogOpen}
+        onOpenChange={(open) => {
+          if (!open && !commitBustePagaMutation.isPending) {
+            setPreviewDialogOpen(false);
+            setPreviewItems([]);
+            setPreviewFailed([]);
+          }
+        }}
+      >
+        <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Upload className="h-5 w-5" />
+              Riepilogo buste paga da confermare
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4 overflow-y-auto px-1 py-2 flex-1">
+            {previewFailed.length > 0 && (
+              <div className="rounded-lg border border-red-200 bg-red-50 p-3 space-y-1">
+                <p className="text-sm font-semibold text-red-800">File non elaborati ({previewFailed.length}):</p>
+                <ul className="text-xs text-red-700 list-disc list-inside space-y-0.5">
+                  {previewFailed.map((f, i) => (
+                    <li key={i}><span className="font-mono">{f.filename}</span> — {f.reason}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {previewItems.length === 0 ? (
+              <p className="text-sm text-gray-500 italic">Nessun PDF da confermare.</p>
+            ) : (
+              <div className="space-y-3">
+                {previewItems.map((item, idx) => {
+                  const updateItem = (patch: Partial<PreviewItem>) => {
+                    setPreviewItems(prev => prev.map((p, i) => i === idx ? { ...p, ...patch } : p));
+                  };
+                  return (
+                    <div
+                      key={item.fileUrl}
+                      className={`rounded-lg border p-3 space-y-3 ${item.include ? 'border-gray-200 bg-white' : 'border-gray-200 bg-gray-50 opacity-60'}`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-2 min-w-0">
+                          <input
+                            type="checkbox"
+                            checked={item.include}
+                            onChange={(e) => updateItem({ include: e.target.checked })}
+                            className="mt-1 h-4 w-4"
+                            aria-label="Includi nel commit"
+                          />
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium font-mono truncate">{item.filename}</p>
+                            {item.nomePdf && <p className="text-xs text-gray-500">PDF: {item.nomePdf} · CF {item.codiceFiscale}</p>}
+                          </div>
+                        </div>
+                        {item.warning && (
+                          <Badge variant="destructive" className="shrink-0 text-xs">Attenzione</Badge>
+                        )}
+                      </div>
+
+                      {item.warning && (
+                        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">{item.warning}</p>
+                      )}
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div className="space-y-1">
+                          <Label className="text-xs">Dipendente *</Label>
+                          <Select
+                            value={item.collaboratoreId || ""}
+                            onValueChange={(value) => {
+                              const c = dipendentiAttivi.find(d => d.id === value);
+                              updateItem({
+                                collaboratoreId: c?.id || null,
+                                collaboratoreNome: c ? `${c.nome} ${c.cognome}`.trim() : null,
+                                warning: c ? null : item.warning,
+                              });
+                            }}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Seleziona dipendente..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {dipendentiAttivi.length === 0 ? (
+                                <div className="px-2 py-2 text-xs text-gray-500">Nessun dipendente attivo</div>
+                              ) : (
+                                dipendentiAttivi.map(c => (
+                                  <SelectItem key={c.id} value={c.id}>
+                                    {c.nome} {c.cognome}
+                                  </SelectItem>
+                                ))
+                              )}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="space-y-1">
+                          <Label className="text-xs">Periodo (YYYY-MM) *</Label>
+                          <Input
+                            type="text"
+                            pattern="\d{4}-(0[1-9]|1[0-2])"
+                            value={item.periodo}
+                            onChange={(e) => updateItem({ periodo: e.target.value })}
+                            className="font-mono"
+                          />
+                          <p className="text-xs text-gray-400">{item.meseLabel}</p>
+                        </div>
+
+                        <div className="space-y-1">
+                          <Label className="text-xs">Netto in busta (€) *</Label>
+                          <div className="relative">
+                            <Euro className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                            <Input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              className="pl-9"
+                              value={item.nettoInBusta}
+                              onChange={(e) => updateItem({ nettoInBusta: parseFloat(e.target.value) || 0 })}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="border-t pt-3">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setPreviewDialogOpen(false);
+                setPreviewItems([]);
+                setPreviewFailed([]);
+              }}
+              disabled={commitBustePagaMutation.isPending}
+            >
+              Annulla
+            </Button>
+            <Button
+              onClick={() => commitBustePagaMutation.mutate(previewItems)}
+              disabled={
+                commitBustePagaMutation.isPending ||
+                previewItems.filter(i => i.include).length === 0 ||
+                previewItems.some(i => i.include && (!i.collaboratoreId || !i.periodo || !i.nettoInBusta))
+              }
+            >
+              {commitBustePagaMutation.isPending
+                ? "Conferma in corso..."
+                : `Conferma ${previewItems.filter(i => i.include).length} ${previewItems.filter(i => i.include).length === 1 ? 'busta paga' : 'buste paga'}`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
     </div>
   );
