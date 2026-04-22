@@ -48,7 +48,7 @@ export default function EntrateUsciteChart({ isAdmin = false }: Props) {
   });
 
   // Entrate: fatture emesse raggruppate per cliente (importo in euro)
-  const entratePerCliente = aggregate(fattureEmesse, f => f.cliente, f => f.importoTotale);
+  const entratePerCliente = aggregate(fattureEmesse, f => f.cliente, f => f.importo);
   const totaleEntrate = entratePerCliente.reduce((s, x) => s + x.value, 0);
 
   // Uscite: fatture ingresso (centesimi / 100) + consulenti (euro) + costi generali (euro).

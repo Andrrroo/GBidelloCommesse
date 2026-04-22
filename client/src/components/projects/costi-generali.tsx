@@ -147,13 +147,30 @@ export default function CostiGenerali() {
       const response = await apiRequest("DELETE", `/api/costi-generali/${id}`);
       if (!response.ok) throw new Error("Failed to delete");
     },
+    // Optimistic update: rimuovo la riga dalla cache subito così l'UI
+    // reagisce immediatamente. Se il server risponde con errore, rollback.
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/costi-generali"] });
+      const prev = queryClient.getQueryData<CostoGenerale[]>(["/api/costi-generali"]);
+      queryClient.setQueryData<CostoGenerale[]>(
+        ["/api/costi-generali"],
+        (old) => (old ?? []).filter(c => c.id !== id)
+      );
+      return { prev };
+    },
+    onError: (_err, _id, context) => {
+      if (context?.prev) {
+        queryClient.setQueryData(["/api/costi-generali"], context.prev);
+      }
+      toast({ title: "Errore", description: "Errore durante l'eliminazione", variant: "destructive" });
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/costi-generali"] });
       invalidateDashboard();
       toast({ title: "Successo", description: "Costo eliminato con successo" });
     },
-    onError: () => {
-      toast({ title: "Errore", description: "Errore durante l'eliminazione", variant: "destructive" });
+    onSettled: () => {
+      // Refetch per riconciliare con lo stato del server (paranoia)
+      queryClient.invalidateQueries({ queryKey: ["/api/costi-generali"] });
     }
   });
 
@@ -168,7 +185,7 @@ export default function CostiGenerali() {
     codiceFiscale: string;
     periodo: string;
     meseLabel: string;
-    nettoInBusta: number;
+    imponibileMensile: number;
     nomePdf: string | null;
     dipendenteId: string | null;
     collaboratoreNome: string | null;
@@ -228,7 +245,7 @@ export default function CostiGenerali() {
           fileUrl: i.fileUrl,
           dipendenteId: i.dipendenteId,
           periodo: i.periodo,
-          nettoInBusta: i.nettoInBusta,
+          imponibileMensile: i.imponibileMensile,
         })),
       };
       const response = await apiRequest("POST", "/api/costi-generali/upload-buste-paga/commit", payload);
@@ -1071,7 +1088,7 @@ export default function CostiGenerali() {
                         </div>
 
                         <div className="space-y-1">
-                          <Label className="text-xs">Netto in busta (€) *</Label>
+                          <Label className="text-xs">Imponibile mensile (€) *</Label>
                           <div className="relative">
                             <Euro className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                             <Input
@@ -1079,8 +1096,8 @@ export default function CostiGenerali() {
                               step="0.01"
                               min="0"
                               className="pl-9"
-                              value={item.nettoInBusta}
-                              onChange={(e) => updateItem({ nettoInBusta: parseFloat(e.target.value) || 0 })}
+                              value={item.imponibileMensile}
+                              onChange={(e) => updateItem({ imponibileMensile: parseFloat(e.target.value) || 0 })}
                             />
                           </div>
                         </div>
@@ -1109,7 +1126,7 @@ export default function CostiGenerali() {
               disabled={
                 commitBustePagaMutation.isPending ||
                 previewItems.filter(i => i.include).length === 0 ||
-                previewItems.some(i => i.include && (!i.dipendenteId || !i.periodo || !i.nettoInBusta))
+                previewItems.some(i => i.include && (!i.dipendenteId || !i.periodo || !i.imponibileMensile))
               }
             >
               {commitBustePagaMutation.isPending

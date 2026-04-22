@@ -47,10 +47,10 @@ export default function IncassiManutenzioneChart() {
     if (!f.incassata) continue;
     const isManutenzione = projectMap.get(f.projectId) ?? false;
     if (isManutenzione) {
-      totaleManutenzione += f.importoTotale;
+      totaleManutenzione += f.importo;
       countManutenzione++;
     } else {
-      totaleNuovoLavoro += f.importoTotale;
+      totaleNuovoLavoro += f.importo;
       countNuovoLavoro++;
     }
   }

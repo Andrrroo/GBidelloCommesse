@@ -107,8 +107,8 @@ export default function ProjectsTable() {
   // i totali in euro risultano 0 — la UI nasconde i numeri usando isAdmin.
   const getProjectFatturazione = (projectId: string) => {
     const fatture = fattureEmesse.filter(f => f.projectId === projectId);
-    const totaleEmesso = fatture.reduce((acc, f) => acc + (f.importoTotale ?? 0), 0);
-    const totaleIncassato = fatture.filter(f => f.incassata).reduce((acc, f) => acc + (f.importoTotale ?? 0), 0);
+    const totaleEmesso = fatture.reduce((acc, f) => acc + (f.importo ?? 0), 0);
+    const totaleIncassato = fatture.filter(f => f.incassata).reduce((acc, f) => acc + (f.importo ?? 0), 0);
     const daIncassare = totaleEmesso - totaleIncassato;
     const countDaIncassare = fatture.filter(f => !f.incassata).length;
     return {

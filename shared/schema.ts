@@ -150,7 +150,7 @@ export interface SystemConfig extends InsertSystemConfig {
 }
 
 // ============================================================================
-// Fatture Ingresso Schema — importo in CENTESIMI
+// Fatture Ingresso Schema — importo in CENTESIMI (solo imponibile, no IVA)
 // ============================================================================
 export const insertFatturaIngressoSchema = z.object({
   projectId: z.string().min(1, "La commessa è obbligatoria"),
@@ -159,7 +159,7 @@ export const insertFatturaIngressoSchema = z.object({
   dataEmissione: z.string().min(1, "La data emissione è obbligatoria"),
   dataCaricamento: z.string().optional(),
   dataScadenzaPagamento: z.string().min(1, "La data scadenza è obbligatoria"),
-  importo: z.number().positive("L'importo deve essere positivo"), // in centesimi
+  importo: z.number().positive("L'importo deve essere positivo"), // imponibile in centesimi (senza IVA)
   categoria: z.enum(["materiali", "collaborazione_esterna", "costo_vivo", "altro"]),
   descrizione: z.string().min(1, "La descrizione è obbligatoria"),
   pagata: z.boolean().default(false),
@@ -312,7 +312,7 @@ export interface ActivityLog extends InsertActivityLog {
 
 
 // ============================================================================
-// Fatture Emesse Schema (solo ADMIN) — importi in EURO
+// Fatture Emesse Schema (solo ADMIN) — importi in EURO (solo imponibile, no IVA)
 // ============================================================================
 export const insertFatturaEmessaSchema = z.object({
   projectId: z.string().min(1, "La commessa è obbligatoria"),
@@ -320,9 +320,7 @@ export const insertFatturaEmessaSchema = z.object({
   cliente: z.string().min(1, "Il cliente è obbligatorio"),
   dataEmissione: z.string().min(1, "La data emissione è obbligatoria"),
   dataScadenzaPagamento: z.string().min(1, "La data scadenza è obbligatoria"),
-  importo: z.number().positive("L'importo deve essere positivo"),
-  importoIVA: z.number().min(0).optional(),
-  importoTotale: z.number().positive("L'importo totale deve essere positivo"),
+  importo: z.number().positive("L'importo deve essere positivo"), // IMPONIBILE (senza IVA)
   descrizione: z.string().min(1, "La descrizione è obbligatoria"),
   incassata: z.boolean().default(false),
   dataIncasso: z.string().optional(),

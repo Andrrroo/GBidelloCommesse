@@ -25,18 +25,17 @@ import {
   calculateTotals,
   getProjectDisplayName,
   getTodayISO,
-  calculateIVA,
-  calculateTotalWithIVA
 } from "@/lib/financial-utils";
 
 // Configurazione per tipo fattura
+// Nota: gli importi memorizzati sono SEMPRE l'imponibile (senza IVA). Il
+// campo `importoIVA`/`importoTotale` non esiste più nello schema dal v8.
 export interface InvoiceConfig {
   type: 'emesse' | 'ingresso' | 'consulenti';
   apiEndpoint: string;
   queryKey: string;
   title: string;
   entityLabel: string; // "Cliente", "Fornitore", "Consulente"
-  includeIVA: boolean;
   includeCategoria: boolean;
   statusField: 'incassata' | 'pagata';
   statusLabels: { true: string; false: string };
@@ -52,7 +51,6 @@ export const INVOICE_CONFIGS: Record<string, InvoiceConfig> = {
     queryKey: '/api/fatture-emesse',
     title: 'Fatture Emesse',
     entityLabel: 'Cliente',
-    includeIVA: true,
     includeCategoria: false,
     statusField: 'incassata',
     statusLabels: { true: 'Incassata', false: 'Da incassare' },
@@ -64,7 +62,6 @@ export const INVOICE_CONFIGS: Record<string, InvoiceConfig> = {
     queryKey: '/api/fatture-ingresso',
     title: 'Fatture Ingresso',
     entityLabel: 'Fornitore',
-    includeIVA: false,
     includeCategoria: true,
     statusField: 'pagata',
     statusLabels: { true: 'Pagata', false: 'Da pagare' },
@@ -82,7 +79,6 @@ export const INVOICE_CONFIGS: Record<string, InvoiceConfig> = {
     queryKey: '/api/fatture-consulenti',
     title: 'Fatture Consulenti',
     entityLabel: 'Consulente',
-    includeIVA: false,
     includeCategoria: false,
     statusField: 'pagata',
     statusLabels: { true: 'Pagata', false: 'Da pagare' },
@@ -100,9 +96,7 @@ interface Invoice {
   numeroFattura: string;
   dataEmissione: string;
   dataScadenzaPagamento: string;
-  importo: number;
-  importoIVA?: number;
-  importoTotale?: number;
+  importo: number; // imponibile (senza IVA)
   descrizione: string;
   incassata?: boolean;
   pagata?: boolean;
@@ -145,7 +139,6 @@ export default function GenericInvoiceManager({ config }: GenericInvoiceManagerP
     dataEmissione: getTodayISO(),
     dataScadenzaPagamento: "",
     importo: "",
-    ...(config.includeIVA ? { importoIVA: "", importoTotale: "" } : {}),
     ...(config.includeCategoria ? { categoria: config.categories?.[0]?.value || "" } : {}),
     descrizione: "",
     [config.statusField]: false,
@@ -246,10 +239,6 @@ export default function GenericInvoiceManager({ config }: GenericInvoiceManagerP
       dataEmissione: invoice.dataEmissione?.split('T')[0] || getTodayISO(),
       dataScadenzaPagamento: invoice.dataScadenzaPagamento?.split('T')[0] || "",
       importo: config.amountInCents ? invoice.importo / 100 : invoice.importo,
-      ...(config.includeIVA ? {
-        importoIVA: invoice.importoIVA || 0,
-        importoTotale: invoice.importoTotale || 0
-      } : {}),
       ...(config.includeCategoria ? { categoria: invoice.categoria || "" } : {}),
       descrizione: invoice.descrizione || "",
       [config.statusField]: invoice[config.statusField] || false,
@@ -272,10 +261,6 @@ export default function GenericInvoiceManager({ config }: GenericInvoiceManagerP
       ...formData,
       importo: config.amountInCents ? Math.round(importoNum * 100) : importoNum,
       [entityField]: formData[entityField],
-      ...(config.includeIVA ? {
-        importoIVA: parseFloat(formData.importoIVA) || 0,
-        importoTotale: parseFloat(formData.importoTotale) || 0
-      } : {})
     };
 
     if (editingInvoice) {
@@ -286,19 +271,7 @@ export default function GenericInvoiceManager({ config }: GenericInvoiceManagerP
   };
 
   const handleImportoChange = (rawValue: string) => {
-    if (rawValue === '' || rawValue === undefined) {
-      setFormData(prev => ({ ...prev, importo: "", importoIVA: "", importoTotale: "" }));
-      return;
-    }
-    const importo = parseFloat(rawValue);
-    if (isNaN(importo)) return;
-    if (config.includeIVA) {
-      const iva = calculateIVA(importo);
-      const totale = calculateTotalWithIVA(importo);
-      setFormData(prev => ({ ...prev, importo: rawValue, importoIVA: iva, importoTotale: totale }));
-    } else {
-      setFormData(prev => ({ ...prev, importo: rawValue }));
-    }
+    setFormData(prev => ({ ...prev, importo: rawValue }));
   };
 
   const toggleStatus = async (invoice: Invoice) => {
@@ -317,10 +290,9 @@ export default function GenericInvoiceManager({ config }: GenericInvoiceManagerP
 
   // Helper definiti PRIMA di sort/filter perché li usiamo lì.
   // `?? 0` difensivo: per non-admin sulle fatture emesse il backend rimuove
-  // importo/importoIVA/importoTotale. Senza fallback `undefined / 100 = NaN`
-  // propaga nei reducer dei totali.
+  // importo. Senza fallback `undefined / 100 = NaN` propaga nei reducer.
   const getAmount = (inv: Invoice) => {
-    const rawAmount = (config.includeIVA ? (inv.importoTotale ?? inv.importo) : inv.importo) ?? 0;
+    const rawAmount = inv.importo ?? 0;
     return config.amountInCents ? rawAmount / 100 : rawAmount;
   };
 
@@ -762,69 +734,22 @@ export default function GenericInvoiceManager({ config }: GenericInvoiceManagerP
               </div>
             </div>
 
-            {config.includeIVA ? (
-              <div className="grid grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="importo">Imponibile *</Label>
-                  <div className="relative">
-                    <Euro className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                    <Input
-                      id="importo"
-                      type="number"
-                      step="10"
-                      className="pl-9"
-                      value={formData.importo}
-                      onChange={(e) => handleImportoChange(e.target.value)}
-                      required
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="importoIVA">IVA (22%)</Label>
-                  <div className="relative">
-                    <Euro className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                    <Input
-                      id="importoIVA"
-                      type="number"
-                      step="10"
-                      className="pl-9 bg-gray-50"
-                      value={formData.importoIVA || 0}
-                      readOnly
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="importoTotale">Totale</Label>
-                  <div className="relative">
-                    <Euro className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                    <Input
-                      id="importoTotale"
-                      type="number"
-                      step="10"
-                      className="pl-9 bg-gray-50"
-                      value={formData.importoTotale || 0}
-                      readOnly
-                    />
-                  </div>
-                </div>
+            <div className="space-y-2">
+              <Label htmlFor="importo">Imponibile (EUR) *</Label>
+              <div className="relative">
+                <Euro className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Input
+                  id="importo"
+                  type="number"
+                  step="10"
+                  className="pl-9"
+                  value={formData.importo}
+                  onChange={(e) => handleImportoChange(e.target.value)}
+                  placeholder="Imponibile, senza IVA"
+                  required
+                />
               </div>
-            ) : (
-              <div className="space-y-2">
-                <Label htmlFor="importo">Importo *</Label>
-                <div className="relative">
-                  <Euro className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                  <Input
-                    id="importo"
-                    type="number"
-                    step="10"
-                    className="pl-9"
-                    value={formData.importo}
-                    onChange={(e) => handleImportoChange(e.target.value)}
-                    required
-                  />
-                </div>
-              </div>
-            )}
+            </div>
 
             <div className="space-y-2">
               <Label htmlFor="descrizione">Descrizione *</Label>

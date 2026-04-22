@@ -213,7 +213,7 @@ mountInvoiceRoutes({
   // Collaboratori vedono la fattura (commessa, numero, data, stato, cliente)
   // ma non gli importi: entrate aziendali nascoste.
   sanitizeForNonAdmin: (f) => {
-    const { importo, importoIVA, importoTotale, ...rest } = f as any;
+    const { importo, ...rest } = f as any;
     return rest;
   },
 });

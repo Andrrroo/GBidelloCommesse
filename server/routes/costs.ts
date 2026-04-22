@@ -215,7 +215,7 @@ costsRouter.post(
       codiceFiscale: string;
       periodo: string;
       meseLabel: string;
-      nettoInBusta: number;
+      imponibileMensile: number;
       nomePdf: string | null;
       // Match automatico via CF; null se da scegliere manualmente.
       dipendenteId: string | null;
@@ -258,7 +258,7 @@ costsRouter.post(
           codiceFiscale: cf,
           periodo: parsed.periodo,
           meseLabel: parsed.meseLabel,
-          nettoInBusta: parsed.nettoInBusta,
+          imponibileMensile: parsed.imponibileMensile,
           nomePdf: parsed.nomePdf ?? null,
           dipendenteId,
           collaboratoreNome,
@@ -274,7 +274,7 @@ costsRouter.post(
 );
 
 // Commit dopo review. Riceve l'array finalizzato dall'admin (fileUrl +
-// dipendenteId + periodo + nettoInBusta) e crea/aggiorna i costi.
+// dipendenteId + periodo + imponibileMensile) e crea/aggiorna i costi.
 costsRouter.post('/api/costi-generali/upload-buste-paga/commit', async (req, res) => {
   try {
     if (!isAdminReq(req)) {
@@ -303,11 +303,11 @@ costsRouter.post('/api/costi-generali/upload-buste-paga/commit', async (req, res
         const fileUrl = String(raw?.fileUrl || '');
         const dipendenteId = String(raw?.dipendenteId || '');
         const periodo = String(raw?.periodo || '');
-        const nettoInBusta = Number(raw?.nettoInBusta);
+        const imponibileMensile = Number(raw?.imponibileMensile);
 
         if (!UPLOADED_PDF_URL_REGEX.test(fileUrl)) throw new Error('fileUrl non valido');
         if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(periodo)) throw new Error('periodo non valido (YYYY-MM)');
-        if (!isFinite(nettoInBusta) || nettoInBusta <= 0) throw new Error('nettoInBusta non valido');
+        if (!isFinite(imponibileMensile) || imponibileMensile <= 0) throw new Error('imponibileMensile non valido');
         if (!dipendenteId) throw new Error('dipendenteId mancante');
 
         const collab = collaboratori.find(c => c.id === dipendenteId);
@@ -325,7 +325,7 @@ costsRouter.post('/api/costi-generali/upload-buste-paga/commit', async (req, res
 
         if (existing) {
           const updated = await costiGeneraliStorage.update(existing.id, {
-            importo: nettoInBusta,
+            importo: imponibileMensile,
             allegato: fileUrl,
             pagato: true,
             dataPagamento: todayIso,
@@ -335,7 +335,7 @@ costsRouter.post('/api/costi-generali/upload-buste-paga/commit', async (req, res
             dipendenteId: collab.id,
             fornitore: updated.fornitore,
             periodo,
-            importo: nettoInBusta,
+            importo: imponibileMensile,
             action: 'updated',
             costoId: updated.id,
           });
@@ -347,7 +347,7 @@ costsRouter.post('/api/costi-generali/upload-buste-paga/commit', async (req, res
             descrizione: `Busta paga ${meseLabel(periodo)}`,
             data: todayIso,
             dataScadenza: todayIso,
-            importo: nettoInBusta,
+            importo: imponibileMensile,
             pagato: true,
             dataPagamento: todayIso,
             allegato: fileUrl,
@@ -360,7 +360,7 @@ costsRouter.post('/api/costi-generali/upload-buste-paga/commit', async (req, res
             dipendenteId: collab.id,
             fornitore: fornitoreName,
             periodo,
-            importo: nettoInBusta,
+            importo: imponibileMensile,
             action: 'created',
             costoId: nuovo.id,
           });

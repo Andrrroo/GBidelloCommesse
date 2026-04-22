@@ -2,7 +2,8 @@
 // Estrae solo i campi strettamente necessari per matchare il costo generale:
 //   - codice fiscale dipendente (16 caratteri, identifica univocamente)
 //   - periodo retributivo (es. GENNAIO/2026 → "2026-01")
-//   - netto in busta (importo effettivo bonificato)
+//   - imponibile mensile (IMPONIBILE INPS / TOTALE COMPETENZE — primo
+//     importo della riga di riepilogo finale)
 //
 // Robustezza: se uno qualsiasi di questi 3 campi non viene estratto, la
 // funzione lancia un errore con dettaglio → l'endpoint segnala il PDF
@@ -17,9 +18,9 @@ const MESI_NOMI_IT = [
 
 export interface BustaPagaParsed {
   codiceFiscale: string;
-  periodo: string;       // "YYYY-MM"
-  nettoInBusta: number;  // EUR
-  meseLabel: string;     // "Gennaio 2026"
+  periodo: string;            // "YYYY-MM"
+  imponibileMensile: number;  // EUR — imponibile INPS / totale competenze
+  meseLabel: string;          // "Gennaio 2026"
   // Diagnostica (utile per debug / UI): chi è il dipendente secondo il PDF.
   nomePdf?: string;
 }
@@ -57,37 +58,39 @@ function extractCodiceFiscale(text: string): string {
   return m[0];
 }
 
-function extractNettoInBusta(text: string): number {
+function extractImponibileMensile(text: string): number {
   // Nel layout Buffetti le label ("TOTALE COMPETENZE", "NETTO IN BUSTA",
   // ecc.) sono grafiche del template, non testo estraibile. La riga di
   // riepilogo finale è però riconoscibile perché è l'unica con 6 importi
   // in formato italiano a 2 decimali esatti:
   //   TOT.COMPETENZE  TOT.RIT.SOCIALI  TOT.RIT.FISCALI  ARR.PREC.  ARR.ATTUALE  NETTO IN BUSTA
   //   1.663,17        157,32           45,42            0,16       -0,38        1.445,00
-  // Prendiamo l'ultimo importo di quella riga.
+  // Ci interessa il PRIMO importo (TOTALE COMPETENZE = imponibile INPS/mensile),
+  // non l'ultimo (netto in busta): è il valore che rappresenta il costo
+  // lavoro del dipendente prima delle ritenute.
   const amountRegex = /-?\d{1,3}(?:\.\d{3})*,\d{2}(?!\d)/g;
   const lines = text.split(/\r?\n/);
 
   // Candidate: righe con almeno 6 importi a 2 decimali esatti. In pratica
-  // nella busta Buffetti ce n'è una sola — ma se ce ne fosse più di una
-  // prendiamo quella in cui l'ultimo valore è positivo (il netto non è
-  // mai negativo in una busta paga normale).
-  const candidates: Array<{ line: string; amounts: RegExpMatchArray | null; lastAmount: number }> = [];
+  // nella busta Buffetti ce n'è una sola. Prendiamo il PRIMO importo della
+  // riga (TOTALE COMPETENZE = imponibile); discriminiamo su positività del
+  // primo come filtro di sicurezza.
+  const candidates: Array<{ line: string; firstAmount: number }> = [];
   for (const line of lines) {
     const matches = line.match(amountRegex);
     if (!matches || matches.length < 6) continue;
-    const last = matches[matches.length - 1];
-    const lastNum = parseItalianAmount(last);
-    candidates.push({ line, amounts: matches, lastAmount: lastNum });
+    const firstNum = parseItalianAmount(matches[0]);
+    candidates.push({ line, firstAmount: firstNum });
   }
   if (candidates.length === 0) {
     throw new Error('Riga di riepilogo finale non trovata (6 importi formato italiano)');
   }
-  // Preferiamo il netto positivo. Se tutte le candidate hanno netto ≤0,
-  // prendiamo la prima (caso degenerato: busta paga a zero o negativa).
-  const withPositive = candidates.find(c => c.lastAmount > 0);
+  // Preferiamo il totale competenze positivo (non nullo). Se tutte le
+  // candidate hanno il primo ≤0, prendiamo comunque la prima (caso
+  // degenerato: busta paga a zero).
+  const withPositive = candidates.find(c => c.firstAmount > 0);
   const chosen = withPositive ?? candidates[0];
-  return chosen.lastAmount;
+  return chosen.firstAmount;
 }
 
 function extractNome(text: string, codiceFiscale: string): string | undefined {
@@ -129,9 +132,9 @@ function runExtraction(text: string): BustaPagaParsed {
   try {
     const codiceFiscale = extractCodiceFiscale(text);
     const { periodo, meseLabel } = extractPeriodo(text);
-    const nettoInBusta = extractNettoInBusta(text);
+    const imponibileMensile = extractImponibileMensile(text);
     const nomePdf = extractNome(text, codiceFiscale);
-    return { codiceFiscale, periodo, meseLabel, nettoInBusta, nomePdf };
+    return { codiceFiscale, periodo, meseLabel, imponibileMensile, nomePdf };
   } catch (err) {
     logger.error('Parsing busta paga PDF fallito', {
       err,

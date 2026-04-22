@@ -317,8 +317,8 @@ projectsRouter.get('/api/projects/:id/summary', async (req, res) => {
   try {
     const projectId = req.params.id;
     const fattureEmesse = await fattureEmesseStorage.findByField('projectId', projectId);
-    const totaleEmesso = fattureEmesse.reduce((acc, f) => acc + f.importoTotale, 0);
-    const totaleIncassato = fattureEmesse.filter(f => f.incassata).reduce((acc, f) => acc + f.importoTotale, 0);
+    const totaleEmesso = fattureEmesse.reduce((acc, f) => acc + f.importo, 0);
+    const totaleIncassato = fattureEmesse.filter(f => f.incassata).reduce((acc, f) => acc + f.importo, 0);
 
     const fattureIngresso = await fattureIngressoStorage.findByField('projectId', projectId);
     const totaleFattureIngresso = fattureIngresso.reduce((acc, f) => acc + f.importo, 0) / 100; // importi salvati in centesimi
@@ -339,7 +339,7 @@ projectsRouter.get('/api/projects/:id/summary', async (req, res) => {
 
     // Timeline: tutti gli eventi finanziari ordinati per data
     const timeline = [
-      ...fattureEmesse.map(f => ({ data: f.dataEmissione, tipo: 'emessa' as const, importo: f.importoTotale, incassata: f.incassata, descrizione: f.descrizione })),
+      ...fattureEmesse.map(f => ({ data: f.dataEmissione, tipo: 'emessa' as const, importo: f.importo, incassata: f.incassata, descrizione: f.descrizione })),
       ...fattureIngresso.map(f => ({ data: f.dataEmissione, tipo: 'ingresso' as const, importo: f.importo / 100, pagata: f.pagata, descrizione: f.descrizione })),
       ...fattureConsulenti.map(f => ({ data: f.dataEmissione, tipo: 'consulente' as const, importo: f.importo, pagata: f.pagata, descrizione: f.descrizione })),
       ...costiVivi.map(c => ({ data: c.data, tipo: 'costo_vivo' as const, importo: c.importo / 100, descrizione: c.descrizione })),
@@ -349,12 +349,12 @@ projectsRouter.get('/api/projects/:id/summary', async (req, res) => {
     // stesso pattern della dashboard home ma scoped sulla singola commessa.
     // Entrate: una voce per fattura emessa (#numero — descrizione troncata).
     const entrateBreakdown = fattureEmesse
-      .filter(f => f.importoTotale > 0)
+      .filter(f => f.importo > 0)
       .map(f => {
         const num = f.numeroFattura ? `#${f.numeroFattura}` : '';
         const desc = f.descrizione ? (f.descrizione.length > 40 ? f.descrizione.slice(0, 39) + '…' : f.descrizione) : '';
         const name = [num, desc].filter(Boolean).join(' · ') || f.cliente || 'Fattura senza riferimento';
-        return { name, value: f.importoTotale };
+        return { name, value: f.importo };
       });
 
     // Uscite aggregate per fornitore/consulente/tipologia/risorsa.

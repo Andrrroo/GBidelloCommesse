@@ -67,13 +67,12 @@ dashboardRouter.get('/api/fatture-in-scadenza', async (req, res) => {
 
     // Fatture emesse in scadenza: visibili a tutti (il collaboratore deve
     // sapere che una fattura a un cliente è in scadenza), ma per i non-admin
-    // omettiamo gli importi (importo / importoIVA / importoTotale) — stesso
-    // approccio di /api/fatture-emesse.
+    // omettiamo l'importo (imponibile) — stesso approccio di /api/fatture-emesse.
     const fattureEmesseInScadenza = (await fattureEmesseStorage.readAll())
       .filter(f => !f.incassata && new Date(f.dataScadenzaPagamento) <= tra30giorni)
       .map(f => {
         if (isAdmin) return { ...f, tipo: 'emessa' as const };
-        const { importo, importoIVA, importoTotale, ...rest } = f;
+        const { importo, ...rest } = f;
         return { ...rest, tipo: 'emessa' as const };
       });
 
@@ -102,8 +101,8 @@ dashboardRouter.get('/api/fatture-in-scadenza', async (req, res) => {
 dashboardRouter.get('/api/cash-flow', async (req, res) => {
   try {
     const fattureEmesse = await fattureEmesseStorage.readAll();
-    const totaleEmesso = fattureEmesse.reduce((acc, f) => acc + f.importoTotale, 0);
-    const totaleIncassato = fattureEmesse.filter(f => f.incassata).reduce((acc, f) => acc + f.importoTotale, 0);
+    const totaleEmesso = fattureEmesse.reduce((acc, f) => acc + f.importo, 0);
+    const totaleIncassato = fattureEmesse.filter(f => f.incassata).reduce((acc, f) => acc + f.importo, 0);
     const totaleDaIncassare = totaleEmesso - totaleIncassato;
 
     const fattureIngresso = await fattureIngressoStorage.readAll();

@@ -38,28 +38,18 @@ export const formatDateLong = (dateStr: string): string => {
   });
 };
 
-// Calcolo IVA
-export const calculateIVA = (importo: number, rate: number = 0.22): number => {
-  return Math.round(importo * rate * 100) / 100;
-};
-
-// Calcolo totale con IVA
-export const calculateTotalWithIVA = (importo: number, rate: number = 0.22): number => {
-  return Math.round(importo * (1 + rate) * 100) / 100;
-};
-
 // Interfaccia generica per item con stato pagamento
 interface PayableItem {
   importo?: number;
-  importoTotale?: number;
   pagata?: boolean;
   incassata?: boolean;
 }
 
-// Calcolo totali per liste di fatture/costi
+// Calcolo totali per liste di fatture/costi. Tutti gli `importo` sono
+// imponibili (senza IVA) — lo schema non traccia più l'IVA.
 export const calculateTotals = <T extends PayableItem>(
   items: T[],
-  amountField: 'importo' | 'importoTotale' = 'importo'
+  amountField: 'importo' = 'importo'
 ): {
   total: number;
   paid: number;

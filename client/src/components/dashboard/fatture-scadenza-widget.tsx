@@ -11,7 +11,6 @@ interface FatturaScadenza {
   dataScadenzaPagamento?: string;
   dataScadenza?: string;
   importo?: number;
-  importoTotale?: number;
   fornitore?: string;
   consulente?: string;
   cliente?: string;
@@ -197,7 +196,7 @@ export default function FattureScadenzaWidget() {
             // Importo non presente = sanitizzato dal server per non-admin
             // (p.es. fattura emessa senza importi: il collaboratore vede la
             // scadenza ma non il guadagno).
-            const importoRaw = scadenza.importoTotale ?? scadenza.importo;
+            const importoRaw = scadenza.importo;
             const soggetto = scadenza.fornitore || scadenza.consulente || scadenza.cliente || scadenza.descrizione;
 
             return (

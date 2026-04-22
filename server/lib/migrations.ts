@@ -13,7 +13,7 @@ const META_FILE = path.join(DATA_DIR, '_schema-version.json');
 // VERSIONE ATTUALE DELLO SCHEMA
 // Incrementare di 1 ogni volta che si introduce una migrazione in `MIGRATIONS`.
 // ----------------------------------------------------------------------------
-export const SCHEMA_VERSION = 7;
+export const SCHEMA_VERSION = 8;
 
 /**
  * Ogni migrazione riceve il percorso di `data/` e fa in-place i cambiamenti
@@ -77,6 +77,34 @@ const MIGRATIONS: Record<number, MigrationFn> = {
       await fs.unlink(path.join(dataDir, 'profili-costo.json'));
     } catch {
       // già assente: ok
+    }
+  },
+
+  // v8 — "solo imponibile" refactor. La migration reale per i dati
+  // storici è stata eseguita come script one-off via
+  // `server/lib/migrations/v8-imponibile-migration.ts` (legge gli Excel
+  // Fatture in Cloud, matcha ogni record e sovrascrive `importo` con
+  // l'imponibile). Per DB fresh install questa migration è no-op (non
+  // ci sono dati lordo da convertire). Lo schema della FatturaEmessa
+  // è stato alleggerito: via `importoIVA` e `importoTotale`.
+  8: async (dataDir) => {
+    // Se il file fatture-emesse.json contiene ancora importoIVA o
+    // importoTotale (es. DB creato con schema vecchio), li strippo.
+    const fePath = path.join(dataDir, 'fatture-emesse.json');
+    try {
+      const raw = await fs.readFile(fePath, 'utf-8');
+      const items = JSON.parse(raw);
+      if (!Array.isArray(items)) return;
+      let changed = false;
+      for (const it of items) {
+        if (it && typeof it === 'object') {
+          if ('importoIVA' in it) { delete it.importoIVA; changed = true; }
+          if ('importoTotale' in it) { delete it.importoTotale; changed = true; }
+        }
+      }
+      if (changed) await fs.writeFile(fePath, JSON.stringify(items, null, 2), 'utf-8');
+    } catch {
+      // file mancante: nulla da fare
     }
   },
 
