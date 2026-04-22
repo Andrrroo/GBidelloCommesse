@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { randomUUID } from 'crypto';
-import { dipendentiStorage, projectResourcesStorage } from '../storage.js';
+import { dipendentiStorage, projectResourcesStorage, costiGeneraliStorage } from '../storage.js';
 import { insertDipendenteSchema, updateDipendenteSchema } from '@shared/schema';
 import { logActivity } from '../lib/activity-logger.js';
 import { logger } from '../lib/logger.js';
@@ -63,7 +63,21 @@ dipendentiRouter.post('/api/dipendenti', async (req, res) => {
 
 dipendentiRouter.put('/api/dipendenti/:id', async (req, res) => {
   try {
-    const result = updateDipendenteSchema.safeParse(req.body);
+    // Opzione extra non in schema Dipendente: il client può inviare
+    // `_correctUnpaidStipendiFrom: <vecchio importo>` per indicare che lo
+    // stipendio cambia perché era SBAGLIATO (errore di battitura). In quel
+    // caso, dopo l'update del dipendente, riallineiamo le buste paga NON
+    // PAGATE con l'importo precedente uguale al valore indicato. Di default
+    // (nuovo stipendio = aumento/decremento) le buste paga esistenti
+    // restano storiche e inalterate.
+    const correctUnpaidFromRaw = (req.body as any)?._correctUnpaidStipendiFrom;
+    const correctUnpaidFrom = typeof correctUnpaidFromRaw === 'number' && correctUnpaidFromRaw > 0
+      ? correctUnpaidFromRaw
+      : null;
+    const bodyClean = { ...(req.body as any) };
+    delete bodyClean._correctUnpaidStipendiFrom;
+
+    const result = updateDipendenteSchema.safeParse(bodyClean);
     if (!result.success) return res.status(400).json({ error: 'Validation error', details: result.error.flatten().fieldErrors });
     const updated = await dipendentiStorage.update(req.params.id, result.data);
     if (!updated) return res.status(404).json({ error: 'Dipendente not found' });
@@ -81,7 +95,39 @@ dipendentiRouter.put('/api/dipendenti/:id', async (req, res) => {
       logger.error('Payroll bootstrap failed (update)', { err, dipendenteId: updated.id })
     );
 
-    res.json(updated);
+    // Correzione retroattiva: aggiorna l'importo delle buste paga non ancora
+    // pagate di questo dipendente che avevano il vecchio importo. Le buste
+    // paga già marcate `pagato: true` restano storiche — non le tocchiamo mai.
+    let correctedCount = 0;
+    if (
+      correctUnpaidFrom !== null &&
+      typeof updated.stipendioMensile === 'number' &&
+      updated.stipendioMensile > 0 &&
+      updated.stipendioMensile !== correctUnpaidFrom
+    ) {
+      const costi = await costiGeneraliStorage.readAll();
+      for (const c of costi) {
+        if (
+          c.categoria === 'stipendi' &&
+          c.dipendenteId === updated.id &&
+          !c.pagato &&
+          c.importo === correctUnpaidFrom
+        ) {
+          await costiGeneraliStorage.update(c.id, { importo: updated.stipendioMensile });
+          correctedCount++;
+        }
+      }
+      if (correctedCount > 0) {
+        await logActivity(req, {
+          action: 'update',
+          entityType: 'costo_generale',
+          entityId: `correzione-stipendi-${updated.id}`,
+          details: `Correzione stipendio ${updated.nome} ${updated.cognome || ''}: ${correctedCount} buste paga non pagate allineate da €${correctUnpaidFrom} a €${updated.stipendioMensile}`,
+        });
+      }
+    }
+
+    res.json({ ...updated, _correctedCount: correctedCount });
   } catch (error) { logger.error('Request failed', { err: error, path: req.path, method: req.method }); res.status(500).json({ error: 'Failed to update dipendente' }); }
 });
 

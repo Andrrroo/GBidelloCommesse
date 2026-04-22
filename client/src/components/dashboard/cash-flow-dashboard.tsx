@@ -45,7 +45,7 @@ interface CashFlowDashboardProps {
 export default function CashFlowDashboard({ isAdmin = false }: CashFlowDashboardProps) {
   // Endpoint admin-only: evita fetch 403 per i collaboratori e nasconde la card.
   const { data: cashFlow, isLoading } = useQuery<CashFlowData>({
-    queryKey: ["cash-flow"],
+    queryKey: ["/api/cash-flow"],
     queryFn: async () => {
       const response = await apiRequest("GET", "/api/cash-flow");
       if (!response.ok) throw new Error("Failed to fetch");

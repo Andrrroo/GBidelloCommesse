@@ -11,12 +11,20 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, invalidateDashboard } from "@/lib/queryClient";
 import { formatCurrency } from "@/lib/financial-utils";
 import { Plus, Pencil, Trash2, Euro, UserSquare2 } from "lucide-react";
-import type { Dipendente } from "@shared/schema";
+import type { Dipendente, CostoGenerale } from "@shared/schema";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DIPENDENTE_ROLES, getRoleLabel } from "@/lib/dipendenti-roles";
+
+type SalaryChangePending = {
+  cleanData: Record<string, any>;
+  oldStipendio: number;
+  newStipendio: number;
+  unpaidCount: number;
+  unpaidTotale: number;
+};
 
 export default function DipendentiManagement() {
   const { toast } = useToast();
@@ -24,6 +32,10 @@ export default function DipendentiManagement() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [toDelete, setToDelete] = useState<Dipendente | null>(null);
   const [editing, setEditing] = useState<Dipendente | null>(null);
+  // Dialog di conferma quando lo stipendio cambia: l'admin decide se è
+  // un aumento/decremento (le buste paga storiche restano invariate) oppure
+  // una correzione di errore (le buste paga NON pagate vengono riallineate).
+  const [salaryChangePending, setSalaryChangePending] = useState<SalaryChangePending | null>(null);
   const emptyForm = {
     nome: "",
     cognome: "",
@@ -71,9 +83,27 @@ export default function DipendentiManagement() {
         const err = await response.json();
         throw new Error(err.message || err.error || "Errore aggiornamento");
       }
-      return response.json();
+      return response.json() as Promise<Dipendente & { _correctedCount?: number }>;
     },
-    onSuccess: () => { invalidate(); toast({ title: "Dipendente aggiornato" }); resetForm(); },
+    onSuccess: (data) => {
+      invalidate();
+      // Invalida anche costi-generali: lo stipendio può aver triggerato
+      // bootstrap payroll (nuova busta paga) o correzione retroattiva
+      // sulle buste paga non pagate. E invalida la dashboard per aggiornare
+      // saldi/widget scadenze.
+      queryClient.invalidateQueries({ queryKey: ["/api/costi-generali"] });
+      invalidateDashboard();
+      const corrected = data?._correctedCount ?? 0;
+      if (corrected > 0) {
+        toast({
+          title: "Dipendente aggiornato",
+          description: `${corrected} bust${corrected === 1 ? "a paga non pagata" : "e paga non pagate"} allineat${corrected === 1 ? "a" : "e"} al nuovo stipendio.`,
+        });
+      } else {
+        toast({ title: "Dipendente aggiornato" });
+      }
+      resetForm();
+    },
     onError: (e: Error) => toast({ title: "Errore", description: e.message, variant: "destructive" }),
   });
 
@@ -112,7 +142,7 @@ export default function DipendentiManagement() {
     setIsDialogOpen(true);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanData: Record<string, any> = {
       ...formData,
@@ -139,11 +169,65 @@ export default function DipendentiManagement() {
       delete cleanData.codiceFiscale;
     }
 
-    if (editing) {
-      updateMutation.mutate({ id: editing.id, data: cleanData });
-    } else {
+    if (!editing) {
       createMutation.mutate(cleanData);
+      return;
     }
+
+    // Update: se lo stipendio mensile è cambiato, chiedo conferma all'admin
+    // per distinguere "aumento/decremento" (buste paga storiche invariate)
+    // da "correzione errore di battitura" (allineare buste paga non pagate).
+    const oldStip = typeof editing.stipendioMensile === 'number' ? editing.stipendioMensile : null;
+    const newStip = typeof cleanData.stipendioMensile === 'number' ? cleanData.stipendioMensile : null;
+    const stipendioChanged = oldStip !== null && newStip !== null && oldStip !== newStip;
+
+    if (!stipendioChanged) {
+      updateMutation.mutate({ id: editing.id, data: cleanData });
+      return;
+    }
+
+    // Stipendio cambiato: scarico le buste paga non pagate col vecchio importo
+    // per mostrare all'admin quante verrebbero riallineate in caso di correzione.
+    try {
+      const response = await apiRequest("GET", "/api/costi-generali");
+      const costi: CostoGenerale[] = response.ok ? await response.json() : [];
+      const unpaid = costi.filter(
+        c => c.categoria === 'stipendi'
+          && c.dipendenteId === editing.id
+          && !c.pagato
+          && c.importo === oldStip
+      );
+      if (unpaid.length === 0) {
+        // Niente di retroattivo da decidere → procedo senza dialog.
+        updateMutation.mutate({ id: editing.id, data: cleanData });
+        return;
+      }
+      // Apro il dialog di conferma. Il submit effettivo parte da lì.
+      setSalaryChangePending({
+        cleanData,
+        oldStipendio: oldStip!,
+        newStipendio: newStip!,
+        unpaidCount: unpaid.length,
+        unpaidTotale: unpaid.reduce((s, c) => s + c.importo, 0),
+      });
+    } catch {
+      // In caso di errore di fetch, fallback al submit normale (server
+      // farà il suo dovere; nel peggiore dei casi perdiamo la correzione
+      // retroattiva, ma non rompiamo il flusso).
+      updateMutation.mutate({ id: editing.id, data: cleanData });
+    }
+  };
+
+  // Conferma l'update stipendio: l'admin ha scelto "correzione errore" o
+  // "aumento/decremento". `retroactive=true` → il server allinea anche le
+  // buste paga non pagate col vecchio importo.
+  const confirmSalaryChange = (retroactive: boolean) => {
+    if (!salaryChangePending || !editing) return;
+    const payload = retroactive
+      ? { ...salaryChangePending.cleanData, _correctUnpaidStipendiFrom: salaryChangePending.oldStipendio }
+      : salaryChangePending.cleanData;
+    updateMutation.mutate({ id: editing.id, data: payload });
+    setSalaryChangePending(null);
   };
 
 
@@ -385,6 +469,78 @@ export default function DipendentiManagement() {
                 </Button>
               </DialogFooter>
             </form>
+          </DialogContent>
+        </Dialog>
+
+        {/* Conferma modifica stipendio: aumento vs correzione errore */}
+        <Dialog
+          open={!!salaryChangePending}
+          onOpenChange={(open) => {
+            if (!open && !updateMutation.isPending) setSalaryChangePending(null);
+          }}
+        >
+          <DialogContent
+            className="max-w-lg"
+            onEscapeKeyDown={(e) => { if (updateMutation.isPending) e.preventDefault(); }}
+            onPointerDownOutside={(e) => { if (updateMutation.isPending) e.preventDefault(); }}
+          >
+            <DialogHeader>
+              <DialogTitle>Modifica stipendio</DialogTitle>
+            </DialogHeader>
+            {salaryChangePending && (
+              <div className="space-y-4 text-sm">
+                <div className="rounded-lg bg-blue-50 border border-blue-200 p-3">
+                  <p className="text-blue-900">
+                    <strong>{editing?.nome} {editing?.cognome}</strong>: stipendio da{" "}
+                    <strong>{formatCurrency(salaryChangePending.oldStipendio)}</strong> a{" "}
+                    <strong>{formatCurrency(salaryChangePending.newStipendio)}</strong>
+                  </p>
+                </div>
+                <p className="text-gray-700">
+                  Ci {salaryChangePending.unpaidCount === 1 ? "è" : "sono"}{" "}
+                  <strong>{salaryChangePending.unpaidCount}</strong>{" "}
+                  bust{salaryChangePending.unpaidCount === 1 ? "a paga non pagata" : "e paga non pagate"}{" "}
+                  col vecchio importo ({formatCurrency(salaryChangePending.unpaidTotale)} totali).
+                </p>
+                <p className="text-gray-700">
+                  Qual è il motivo della modifica?
+                </p>
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    className="w-full text-left rounded-lg border-2 border-gray-200 hover:border-blue-400 hover:bg-blue-50 p-3 transition-colors"
+                    disabled={updateMutation.isPending}
+                    onClick={() => confirmSalaryChange(false)}
+                  >
+                    <p className="font-semibold text-gray-900">Aumento o decremento stipendio</p>
+                    <p className="text-xs text-gray-600 mt-1">
+                      Le buste paga esistenti <strong>restano invariate</strong> (storiche).
+                      Solo le prossime useranno il nuovo importo.
+                    </p>
+                  </button>
+                  <button
+                    type="button"
+                    className="w-full text-left rounded-lg border-2 border-gray-200 hover:border-amber-500 hover:bg-amber-50 p-3 transition-colors"
+                    disabled={updateMutation.isPending}
+                    onClick={() => confirmSalaryChange(true)}
+                  >
+                    <p className="font-semibold text-gray-900">Correzione di un errore</p>
+                    <p className="text-xs text-gray-600 mt-1">
+                      Anche le <strong>{salaryChangePending.unpaidCount} bust{salaryChangePending.unpaidCount === 1 ? "a" : "e"} non pagat{salaryChangePending.unpaidCount === 1 ? "a" : "e"}</strong> verranno riallineate al nuovo importo. Le buste paga già pagate non vengono mai toccate.
+                    </p>
+                  </button>
+                </div>
+              </div>
+            )}
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setSalaryChangePending(null)}
+                disabled={updateMutation.isPending}
+              >
+                Annulla
+              </Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
 

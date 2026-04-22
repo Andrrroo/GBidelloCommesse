@@ -403,18 +403,24 @@ async function handleUpdateCostoGenerale(req: import('express').Request, res: im
       }
     }
 
-    // Se il record è stipendi, importo/fornitore/dipendenteId sono immutabili
-    // dal form costi generali: lo stipendio si modifica solo dall'anagrafica
-    // collaboratori (e si ri-materializza nei batch futuri). Non permettiamo
-    // neppure di cambiare categoria di un costo stipendi in qualcos'altro:
-    // manterrebbe il link al dipendente con una categoria incongruente.
+    // Se il record è stipendi: fornitore/dipendenteId/periodo sono SEMPRE
+    // immutabili (identità del record). L'importo è invece editabile SOLO
+    // se la busta paga non è ancora stata pagata — utile per correggere
+    // errori puntuali di inserimento senza dover toccare anagrafica o altre
+    // buste paga. Una volta marcata pagata, il record diventa storico e
+    // intoccabile. Il cambio categoria da stipendi a qualcos'altro è
+    // vietato (manterrebbe il link al dipendente con categoria incongruente).
     let patch = result.data;
     if (existing.categoria === 'stipendi') {
       if (patch.categoria !== undefined && patch.categoria !== 'stipendi') {
         return res.status(400).json({ error: 'Non è possibile cambiare categoria a un record stipendi' });
       }
-      const { importo, fornitore, dipendenteId, periodo, ...rest } = patch;
+      const { fornitore, dipendenteId, periodo, importo, ...rest } = patch;
       patch = rest;
+      // Correzione puntuale: importo passa attraverso solo se non ancora pagato.
+      if (typeof importo === 'number' && importo > 0 && !existing.pagato) {
+        patch.importo = importo;
+      }
     }
 
     const updated = await costiGeneraliStorage.update(req.params.id, patch);

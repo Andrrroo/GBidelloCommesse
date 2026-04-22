@@ -830,21 +830,39 @@ export default function CostiGenerali() {
             <div className="space-y-2">
               <Label htmlFor="importo">Importo *</Label>
               <div className="relative">
-                <Euro className={`absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 ${formData.categoria === "stipendi" ? "text-gray-300" : "text-gray-400"}`} />
-                <Input
-                  id="importo"
-                  type="number"
-                  step="10"
-                  className="pl-9"
-                  value={formData.importo}
-                  onChange={(e) => setFormData(prev => ({ ...prev, importo: e.target.value }))}
-                  disabled={formData.categoria === "stipendi"}
-                  required
-                />
+                {/*
+                  Stipendi importo:
+                   - creazione (no editing): bloccato, server deriva da anagrafica
+                   - editing busta paga NON pagata: EDITABILE (correzione puntuale)
+                   - editing busta paga PAGATA: bloccato (storica, immutabile)
+                */}
+                {(() => {
+                  const isStipendiLocked = formData.categoria === "stipendi"
+                    && (!editingCosto || editingCosto.pagato);
+                  return (
+                    <>
+                      <Euro className={`absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 ${isStipendiLocked ? "text-gray-300" : "text-gray-400"}`} />
+                      <Input
+                        id="importo"
+                        type="number"
+                        step="10"
+                        className="pl-9"
+                        value={formData.importo}
+                        onChange={(e) => setFormData(prev => ({ ...prev, importo: e.target.value }))}
+                        disabled={isStipendiLocked}
+                        required
+                      />
+                    </>
+                  );
+                })()}
               </div>
               {formData.categoria === "stipendi" && (
                 <p className="text-xs text-gray-500">
-                  L'importo è lo stipendio del dipendente. Per modificarlo vai in Anagrafica → Collaboratori.
+                  {!editingCosto
+                    ? "L'importo sarà lo stipendio mensile del dipendente selezionato. Per modificarlo vai in Anagrafica → Dipendenti."
+                    : editingCosto.pagato
+                      ? "Busta paga già pagata: importo bloccato (record storico, non modificabile)."
+                      : "Correggi qui l'importo se diverso dal netto effettivo di questa busta paga. Le altre buste paga dello stesso dipendente non vengono toccate."}
                 </p>
               )}
             </div>
@@ -942,7 +960,18 @@ export default function CostiGenerali() {
           }
         }}
       >
-        <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
+        <DialogContent
+          className="max-w-4xl max-h-[90vh] flex flex-col"
+          // Durante il commit, blocchiamo sia ESC che click sull'overlay:
+          // altrimenti il dialog chiude ma la mutation continua in background
+          // e l'utente crede di aver annullato mentre i record vengono creati.
+          onEscapeKeyDown={(e) => {
+            if (commitBustePagaMutation.isPending) e.preventDefault();
+          }}
+          onPointerDownOutside={(e) => {
+            if (commitBustePagaMutation.isPending) e.preventDefault();
+          }}
+        >
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Upload className="h-5 w-5" />

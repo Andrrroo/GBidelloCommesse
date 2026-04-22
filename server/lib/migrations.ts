@@ -162,11 +162,17 @@ async function readMeta(): Promise<SchemaMeta> {
     const raw = await fs.readFile(META_FILE, 'utf-8');
     return JSON.parse(raw) as SchemaMeta;
   } catch {
-    // Nessun meta file: è un DB fresco oppure esisteva prima dell'introduzione
-    // del sistema di migrazioni. Trattiamolo come "già allineato" per non
-    // rovinare dati esistenti — assumiamo che i dati correnti corrispondano
-    // alla versione corrente.
-    return { version: SCHEMA_VERSION };
+    // Nessun meta file. Può essere:
+    //  - DB fresco (data/ vuoto) → le migrations sono tutte no-op, scriveremo
+    //    comunque il meta a fine chain.
+    //  - DB legacy preesistente (es. da prima dell'introduzione del meta):
+    //    può avere struttura vecchia (collaboratori.json, collaboratoreId,
+    //    ecc.). Serve far girare TUTTA la catena per aggiornarlo.
+    //
+    // Tutte le migration sono idempotenti (skip se field/file assente), quindi
+    // partire da version=0 è sicuro in entrambi i casi: è peggio saltare una
+    // migration legittima che ri-applicarla su dati già allineati.
+    return { version: 0 };
   }
 }
 
