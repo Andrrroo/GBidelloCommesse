@@ -13,8 +13,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest } from "@/lib/queryClient";
 import { UserPlus, Users, Clock, TrendingUp, Trash2, Edit, Wallet } from "lucide-react";
-import { type Project, type Collaboratore } from "@shared/schema";
-import { COLLABORATORE_ROLES as ROLES, getRoleLabel } from "@/lib/collaboratori-roles";
+import { type Project, type Dipendente } from "@shared/schema";
+import { DIPENDENTE_ROLES as ROLES, getRoleLabel } from "@/lib/dipendenti-roles";
 
 interface ProjectResource {
   id: string;
@@ -29,7 +29,7 @@ interface ProjectResource {
   isResponsabile: boolean;
   dataInizio?: string;
   dataFine?: string;
-  collaboratoreId?: string;
+  dipendenteId?: string;
 }
 
 
@@ -40,7 +40,7 @@ export default function GestioneRisorse() {
   const [editingResource, setEditingResource] = useState<ProjectResource | null>(null);
   const [resourceIdToDelete, setResourceIdToDelete] = useState<string | null>(null);
   const [selectedProject, setSelectedProject] = useState<string>("");
-  // Distinzione tra risorsa dall'anagrafica collaboratori (default) e risorsa
+  // Distinzione tra risorsa dall'anagrafica dipendenti (default) e risorsa
   // "esterna" inserita a mano (es. freelance occasionale, consulente una tantum)
   // per cui non ha senso creare un record in anagrafica.
   const [resourceSource, setResourceSource] = useState<ResourceSource>('anagrafica');
@@ -50,7 +50,7 @@ export default function GestioneRisorse() {
   const isAdmin = isAdminFn();
 
   const [formData, setFormData] = useState({
-    collaboratoreId: "",
+    dipendenteId: "",
     userName: "",
     userEmail: "",
     role: "progettista",
@@ -64,8 +64,8 @@ export default function GestioneRisorse() {
   });
 
   // Fetch collaboratori anagrafica
-  const { data: collaboratori = [] } = useQuery<Collaboratore[]>({
-    queryKey: ["/api/collaboratori"]
+  const { data: collaboratori = [] } = useQuery<Dipendente[]>({
+    queryKey: ["/api/dipendenti"]
   });
 
   // Fetch progetti
@@ -122,7 +122,7 @@ export default function GestioneRisorse() {
 
   const resetForm = () => {
     setFormData({
-      collaboratoreId: "",
+      dipendenteId: "",
       userName: "",
       userEmail: "",
       role: "progettista",
@@ -140,12 +140,12 @@ export default function GestioneRisorse() {
     setIsDialogOpen(false);
   };
 
-  const handleSelectCollaboratore = (collaboratoreId: string) => {
-    const c = collaboratori.find(x => x.id === collaboratoreId);
+  const handleSelectCollaboratore = (dipendenteId: string) => {
+    const c = collaboratori.find(x => x.id === dipendenteId);
     if (!c) return;
     setFormData(prev => ({
       ...prev,
-      collaboratoreId,
+      dipendenteId,
       userName: `${c.nome} ${c.cognome}`,
       userEmail: c.email || "",
       costoOrario: c.costoOrario,
@@ -165,10 +165,10 @@ export default function GestioneRisorse() {
       return;
     }
 
-    if (resourceSource === 'anagrafica' && !formData.collaboratoreId) {
+    if (resourceSource === 'anagrafica' && !formData.dipendenteId) {
       toast({
         title: "Errore",
-        description: "Seleziona un collaboratore dall'anagrafica o passa a 'Risorsa esterna'",
+        description: "Seleziona un dipendente dall'anagrafica o passa a 'Risorsa esterna'",
         variant: "destructive",
       });
       return;
@@ -196,9 +196,9 @@ export default function GestioneRisorse() {
     if (formData.userEmail) payload.userEmail = formData.userEmail;
     if (formData.dataInizio) payload.dataInizio = formData.dataInizio;
     if (formData.dataFine) payload.dataFine = formData.dataFine;
-    // collaboratoreId solo se in modalità anagrafica
-    if (resourceSource === 'anagrafica' && formData.collaboratoreId) {
-      payload.collaboratoreId = formData.collaboratoreId;
+    // dipendenteId solo se in modalità anagrafica
+    if (resourceSource === 'anagrafica' && formData.dipendenteId) {
+      payload.dipendenteId = formData.dipendenteId;
     }
 
     saveResourceMutation.mutate(payload);
@@ -207,11 +207,11 @@ export default function GestioneRisorse() {
   const handleEdit = (resource: ProjectResource) => {
     setEditingResource(resource);
     setSelectedProject(resource.projectId);
-    // Se la risorsa ha un collaboratoreId legato all'anagrafica la apriamo in
+    // Se la risorsa ha un dipendenteId legato all'anagrafica la apriamo in
     // modalità "anagrafica", altrimenti è una risorsa esterna (inserita a mano)
-    setResourceSource(resource.collaboratoreId ? 'anagrafica' : 'esterna');
+    setResourceSource(resource.dipendenteId ? 'anagrafica' : 'esterna');
     setFormData({
-      collaboratoreId: resource.collaboratoreId || "",
+      dipendenteId: resource.dipendenteId || "",
       userName: resource.userName,
       userEmail: resource.userEmail || "",
       role: resource.role,
@@ -312,7 +312,7 @@ export default function GestioneRisorse() {
                       // Reset campi manuali se stai passando dall'esterna
                       setFormData(prev => ({
                         ...prev,
-                        collaboratoreId: "",
+                        dipendenteId: "",
                         userName: "",
                         userEmail: "",
                         costoOrario: "",
@@ -326,7 +326,7 @@ export default function GestioneRisorse() {
                     data-testid="resource-source-anagrafica"
                   >
                     <div className="font-medium">Dall'anagrafica</div>
-                    <div className="text-xs text-gray-600">Collaboratore interno registrato</div>
+                    <div className="text-xs text-gray-600">Dipendente interno registrato</div>
                   </button>
                   <button
                     type="button"
@@ -334,7 +334,7 @@ export default function GestioneRisorse() {
                       setResourceSource('esterna');
                       setFormData(prev => ({
                         ...prev,
-                        collaboratoreId: "",
+                        dipendenteId: "",
                       }));
                     }}
                     className={`p-3 rounded-md border-2 text-left text-sm transition-all ${
@@ -352,18 +352,18 @@ export default function GestioneRisorse() {
 
               {resourceSource === 'anagrafica' ? (
                 <div>
-                  <Label htmlFor="collaboratore">Collaboratore *</Label>
+                  <Label htmlFor="collaboratore">Dipendente *</Label>
                   <Select
-                    value={formData.collaboratoreId}
+                    value={formData.dipendenteId}
                     onValueChange={handleSelectCollaboratore}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Seleziona dall'anagrafica collaboratori" />
+                      <SelectValue placeholder="Seleziona dall'anagrafica dipendenti" />
                     </SelectTrigger>
                     <SelectContent>
                       {collaboratori.filter(c => c.active).length === 0 ? (
                         <div className="px-2 py-3 text-sm text-gray-500">
-                          Nessun collaboratore in anagrafica. Chiedi all'admin di crearne uno
+                          Nessun dipendente in anagrafica. Chiedi all'admin di crearne uno
                           oppure passa a "Risorsa esterna".
                         </div>
                       ) : (

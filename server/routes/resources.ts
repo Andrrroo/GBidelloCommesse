@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { randomUUID } from 'crypto';
-import { tagsStorage, projectTagsStorage, projectResourcesStorage, collaboratoriStorage } from '../storage.js';
+import { tagsStorage, projectTagsStorage, projectResourcesStorage, dipendentiStorage } from '../storage.js';
 import { insertTagSchema, insertProjectResourceSchema, insertProjectTagSchema } from '@shared/schema';
 import { logActivity } from '../lib/activity-logger.js';
 import { logger } from '../lib/logger.js';
@@ -91,10 +91,10 @@ resourcesRouter.post('/api/project-resources', async (req, res) => {
     const result = insertProjectResourceSchema.safeParse(req.body);
     if (!result.success) return res.status(400).json({ error: 'Validation error', details: result.error.flatten().fieldErrors });
 
-    // Se c'e' un collaboratoreId, il costoOrario viene preso dal collaboratore (in centesimi)
+    // Se c'e' un dipendenteId, il costoOrario viene preso dal collaboratore (in centesimi)
     let resourceData: any = { ...result.data };
-    if (resourceData.collaboratoreId) {
-      const collab = await collaboratoriStorage.findById(resourceData.collaboratoreId);
+    if (resourceData.dipendenteId) {
+      const collab = await dipendentiStorage.findById(resourceData.dipendenteId);
       if (collab) {
         resourceData.costoOrario = Math.round(collab.costoOrario * 100);
       }
@@ -121,8 +121,8 @@ resourcesRouter.put('/api/project-resources/:id', async (req, res) => {
 
     let updates: any = { ...result.data };
     // Se viene cambiato il collaboratore, aggiorno anche il costoOrario
-    if (updates.collaboratoreId) {
-      const collab = await collaboratoriStorage.findById(updates.collaboratoreId);
+    if (updates.dipendenteId) {
+      const collab = await dipendentiStorage.findById(updates.dipendenteId);
       if (collab) {
         updates.costoOrario = Math.round(collab.costoOrario * 100);
       }

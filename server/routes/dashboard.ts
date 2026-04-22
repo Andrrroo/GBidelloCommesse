@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { fattureIngressoStorage, fattureEmesseStorage, fattureConsulentiStorage, costiViviStorage, costiGeneraliStorage, projectResourcesStorage, collaboratoriStorage, projectsStorage } from '../storage.js';
+import { fattureIngressoStorage, fattureEmesseStorage, fattureConsulentiStorage, costiViviStorage, costiGeneraliStorage, projectResourcesStorage, dipendentiStorage, projectsStorage } from '../storage.js';
 import { logger } from '../lib/logger.js';
 
 export const dashboardRouter = Router();
@@ -9,7 +9,7 @@ dashboardRouter.get('/api/pagamenti-collaboratori-pendenti', async (req, res) =>
     const isAdmin = req.session?.user?.role === 'amministratore';
     const [resources, collaboratori, projects] = await Promise.all([
       projectResourcesStorage.readAll(),
-      collaboratoriStorage.readAll(),
+      dipendentiStorage.readAll(),
       projectsStorage.readAll(),
     ]);
 
@@ -17,13 +17,13 @@ dashboardRouter.get('/api/pagamenti-collaboratori-pendenti', async (req, res) =>
       .filter(r => (r.oreLavorate || 0) > (r.orePagate || 0))
       .map(r => {
         const oreDaPagare = (r.oreLavorate || 0) - (r.orePagate || 0);
-        const collab = r.collaboratoreId ? collaboratori.find(c => c.id === r.collaboratoreId) : null;
+        const collab = r.dipendenteId ? collaboratori.find(c => c.id === r.dipendenteId) : null;
         const project = projects.find(p => p.id === r.projectId);
         const costoOrario = collab?.costoOrario ?? r.costoOrario ?? 0;
         const importoDaPagare = oreDaPagare * costoOrario;
         const base = {
           id: r.id,
-          collaboratoreId: r.collaboratoreId,
+          dipendenteId: r.dipendenteId,
           collaboratoreNome: collab ? `${collab.nome} ${collab.cognome}` : r.userName,
           projectId: r.projectId,
           projectCode: project?.code || '',

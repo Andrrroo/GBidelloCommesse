@@ -164,7 +164,7 @@ export default function UsersManagement() {
     }
     return (
       <Badge className="bg-blue-100 text-blue-800">
-          Collaboratore
+          Dipendente
       </Badge>
     );
   };

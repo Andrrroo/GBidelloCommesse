@@ -101,7 +101,7 @@ async function processRicorrenza(latestStart: CostoGenerale, allCosti: CostoGene
       pagato: false,
       ricorrenzaId: latest.ricorrenzaId,
       periodicita: latest.periodicita,
-      // collaboratoreId/periodo non applicabili agli abbonamenti
+      // dipendenteId/periodo non applicabili agli abbonamenti
     };
     await costiGeneraliStorage.create(costo);
     allCosti.push(costo);

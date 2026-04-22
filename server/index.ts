@@ -78,7 +78,7 @@ declare module 'express-session' {
       role: string;
       nome: string;
       email: string;
-      collaboratoreId?: string;
+      dipendenteId?: string;
     };
   }
 }

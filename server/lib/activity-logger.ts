@@ -17,7 +17,7 @@ export type ActivityEntity =
   | 'scadenza'
   | 'comunicazione'
   | 'risorsa'
-  | 'collaboratore'
+  | 'dipendente'
   | 'user'
   | 'tag';
 

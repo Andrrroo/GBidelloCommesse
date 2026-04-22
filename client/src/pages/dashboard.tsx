@@ -25,7 +25,7 @@ import CostiGenerali from "@/components/projects/costi-generali";
 import CentroCostoDashboard from "@/components/projects/centro-costo-dashboard";
 import StoragePanel from "@/components/system/storage-panel";
 import UsersManagement from "@/components/system/users-management";
-import CollaboratoriManagement from "@/components/system/collaboratori-management";
+import DipendentiManagement from "@/components/system/dipendenti-management";
 import ActivityLogViewer from "@/components/system/activity-log-viewer";
 import CalendarFeedPanel from "@/components/system/calendar-feed-panel";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -64,7 +64,7 @@ const SUB_TAB_LABELS: Record<string, Record<string, string>> = {
   },
   anagrafica: {
     clienti: "Clienti",
-    collaboratori: "Collaboratori",
+    dipendenti: "Dipendenti",
   },
   sistema: {
     storage: "Storage",
@@ -274,8 +274,8 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
                       <TabsTrigger value="clienti" className={tabTriggerClass} data-testid="tab-clienti">
                         Anagrafica Clienti
                       </TabsTrigger>
-                      <TabsTrigger value="collaboratori" className={tabTriggerClass} data-testid="tab-collaboratori">
-                        Anagrafica Collaboratori
+                      <TabsTrigger value="dipendenti" className={tabTriggerClass} data-testid="tab-dipendenti">
+                        Anagrafica Dipendenti
                       </TabsTrigger>
                       <TabsTrigger value="parcella" className={tabTriggerClass} data-testid="tab-parcella">
                         Calcolo Parcella
@@ -287,8 +287,8 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
                     <ClientsTable />
                   </TabsContent>
 
-                  <TabsContent value="collaboratori" className="bg-white rounded-b-2xl shadow-lg border border-t-0 border-gray-100 p-6 mt-0 data-[state=active]:animate-fade-in">
-                    <CollaboratoriManagement />
+                  <TabsContent value="dipendenti" className="bg-white rounded-b-2xl shadow-lg border border-t-0 border-gray-100 p-6 mt-0 data-[state=active]:animate-fade-in">
+                    <DipendentiManagement />
                   </TabsContent>
 
                   <TabsContent value="parcella" className="bg-white rounded-b-2xl shadow-lg border border-t-0 border-gray-100 p-6 mt-0 data-[state=active]:animate-fade-in">

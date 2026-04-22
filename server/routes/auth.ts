@@ -40,7 +40,7 @@ authRouter.post('/api/auth/login', authLimiter, async (req, res) => {
       role: user.role,
       nome: user.nome,
       email: user.email,
-      collaboratoreId: user.collaboratoreId,
+      dipendenteId: user.dipendenteId,
     };
 
     res.json({ success: true, user: userWithoutPassword });

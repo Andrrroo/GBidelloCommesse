@@ -6,7 +6,7 @@ import {
   costiViviStorage, costiGeneraliStorage, prestazioniStorage,
   scadenzeStorage, comunicazioniStorage, tagsStorage,
   projectTagsStorage, projectResourcesStorage,
-  collaboratoriStorage,
+  dipendentiStorage,
 } from '../storage.js';
 import { logger } from '../lib/logger.js';
 import { insertActivityLogSchema } from '@shared/schema';
@@ -63,7 +63,7 @@ systemRouter.get('/api/export', async (req, res) => {
       tags: await tagsStorage.readAll(),
       projectTags: await projectTagsStorage.readAll(),
       projectResources: await projectResourcesStorage.readAll(),
-      collaboratori: await collaboratoriStorage.readAll(),
+      collaboratori: await dipendentiStorage.readAll(),
       activityLogs: await activityLogsStorage.readAll(),
       exportedAt: new Date().toISOString()
     };
@@ -93,7 +93,7 @@ systemRouter.post('/api/import', async (req, res) => {
       tags: { storage: tagsStorage, data: data.tags },
       projectTags: { storage: projectTagsStorage, data: data.projectTags },
       projectResources: { storage: projectResourcesStorage, data: data.projectResources },
-      collaboratori: { storage: collaboratoriStorage, data: data.collaboratori },
+      collaboratori: { storage: dipendentiStorage, data: data.collaboratori },
       activityLogs: { storage: activityLogsStorage, data: data.activityLogs },
     };
 

@@ -231,9 +231,9 @@ export const insertUserSchema = z.object({
   nome: z.string().min(1, "Il nome è obbligatorio"),
   email: z.string().email("Email non valida"),
   role: z.enum(["amministratore", "collaboratore"]).default("collaboratore"),
-  // Riferimento all'anagrafica collaboratore: da qui arriva il costoOrario
+  // Riferimento all'anagrafica dipendente: da qui arriva il costoOrario
   // di default per le prestazioni dell'utente se non specificato esplicitamente.
-  collaboratoreId: z.string().optional(),
+  dipendenteId: z.string().optional(),
   active: z.boolean().default(true),
   createdAt: z.string().optional(),
   // Token random per il feed iCal `/api/calendar/feed.ics?token=...`.
@@ -258,10 +258,13 @@ export interface UserWithPassword extends InsertUser {
 }
 
 // ============================================================================
-// Collaboratori Schema (anagrafica aziendale — solo admin)
+// Dipendenti Schema (anagrafica aziendale — solo admin)
 // ============================================================================
-// Base object (senza refine) — usato per .partial() in update
-const collaboratoreBaseSchema = z.object({
+// Tutti i record in questa anagrafica sono dipendenti interni. I consulenti
+// esterni si gestiscono via "Fatture Consulenti" (non hanno anagrafica qui).
+// Se `stipendioMensile` è valorizzato, il sistema attiva l'auto-payroll
+// (busta paga mensile generata + richiesta PDF).
+export const insertDipendenteSchema = z.object({
   nome: z.string().min(1, "Il nome e' obbligatorio"),
   cognome: z.string().min(1, "Il cognome e' obbligatorio"),
   email: z.string().email("Email non valida").optional().or(z.literal('')),
@@ -269,10 +272,6 @@ const collaboratoreBaseSchema = z.object({
   ruolo: z.string().optional(), // es. "Ingegnere", "Geometra", "Tecnico"
   costoOrario: z.number().positive("Il costo orario deve essere positivo"),
   active: z.boolean().default(true),
-  // Flag dipendente (payroll interno). Se true, stipendioMensile alimenta
-  // la generazione automatica dei costi "stipendi" in Costi Generali.
-  // Default false → consulente esterno, gestito via Fatture Consulenti.
-  isDipendente: z.boolean().default(false),
   stipendioMensile: z.number().positive("Lo stipendio deve essere positivo").optional(),
   // Codice fiscale (opzionale, normalizzato maiuscolo) — usato per matchare
   // un dipendente con una busta paga PDF caricata (parser usa il CF estratto).
@@ -282,19 +281,11 @@ const collaboratoreBaseSchema = z.object({
     .or(z.literal('')),
   note: z.string().optional(),
 });
+export const updateDipendenteSchema = insertDipendenteSchema.partial();
 
-export const insertCollaboratoreSchema = collaboratoreBaseSchema.refine(
-  (d) => !d.isDipendente || (typeof d.stipendioMensile === 'number' && d.stipendioMensile > 0),
-  { message: "Lo stipendio mensile è obbligatorio per i dipendenti", path: ["stipendioMensile"] }
-);
-// Update: niente refine cross-field — non vediamo il record completo in un
-// PATCH parziale (es. toggle "active" senza toccare dipendente/stipendio).
-// La coerenza la garantisce il POST e la UI.
-export const updateCollaboratoreSchema = collaboratoreBaseSchema.partial();
+export type InsertDipendente = z.infer<typeof insertDipendenteSchema>;
 
-export type InsertCollaboratore = z.infer<typeof insertCollaboratoreSchema>;
-
-export interface Collaboratore extends InsertCollaboratore {
+export interface Dipendente extends InsertDipendente {
   id: string;
   createdAt?: string;
 }
@@ -397,7 +388,7 @@ export const insertCostoGeneraleSchema = z.object({
   // Traceability per la categoria "stipendi": collega un costo al dipendente
   // e al periodo di riferimento. Usati per idempotenza della generazione
   // batch mensile e per la dashboard per-fornitore.
-  collaboratoreId: z.string().optional(),
+  dipendenteId: z.string().optional(),
   periodo: z.string().regex(/^\d{4}-\d{2}$/, "Formato periodo: YYYY-MM").optional(),
   // Ricorrenza per categoria "abbonamento" (e in generale per costi
   // ripetitivi): `periodicita` definisce ogni quanti mesi rigenerare il
@@ -500,7 +491,7 @@ export const insertProjectResourceSchema = z.object({
   isResponsabile: z.boolean().default(false),
   dataInizio: z.string().optional(),
   dataFine: z.string().optional(),
-  collaboratoreId: z.string().optional(), // link all'anagrafica Collaboratore
+  dipendenteId: z.string().optional(), // link all'anagrafica Dipendente
 });
 
 export type InsertProjectResource = z.infer<typeof insertProjectResourceSchema>;

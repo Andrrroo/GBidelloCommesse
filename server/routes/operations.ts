@@ -1,12 +1,12 @@
 import { Router } from 'express';
 import { randomUUID } from 'crypto';
-import { prestazioniStorage, scadenzeStorage, comunicazioniStorage, projectResourcesStorage, usersStorage, collaboratoriStorage, activityLogsStorage } from '../storage.js';
+import { prestazioniStorage, scadenzeStorage, comunicazioniStorage, projectResourcesStorage, usersStorage, dipendentiStorage, activityLogsStorage } from '../storage.js';
 import { insertPrestazioneSchema, insertScadenzaSchema, insertComunicazioneSchema } from '@shared/schema';
 import { logActivity } from '../lib/activity-logger.js';
 import { logger } from '../lib/logger.js';
 
 // Ricalcola oreLavorate per una risorsa progetto in base alle prestazioni
-// matcher: cerca la risorsa per collaboratoreId (se disponibile) o userName
+// matcher: cerca la risorsa per dipendenteId (se disponibile) o userName
 async function syncOreLavorate(projectId: string, userId: string, userName?: string) {
   const prestazioni = await prestazioniStorage.readAll();
   const totaleOre = prestazioni
@@ -19,7 +19,7 @@ async function syncOreLavorate(projectId: string, userId: string, userName?: str
   const risorsa = risorse.find(r =>
     r.projectId === projectId && (
       (userName && r.userName === userName) ||
-      r.collaboratoreId === userId
+      r.dipendenteId === userId
     )
   );
   if (risorsa) {
@@ -72,8 +72,8 @@ operationsRouter.post('/api/prestazioni', async (req, res) => {
     let costoOrario = result.data.costoOrario;
     if (!costoOrario || costoOrario <= 0) {
       const user = await usersStorage.findById(result.data.userId);
-      if (user?.collaboratoreId) {
-        const collab = await collaboratoriStorage.findById(user.collaboratoreId);
+      if (user?.dipendenteId) {
+        const collab = await dipendentiStorage.findById(user.dipendenteId);
         if (collab) costoOrario = collab.costoOrario;
       }
     }

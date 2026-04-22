@@ -161,7 +161,7 @@ import type {
   ProjectTag,
   FileRouting,
   ProjectResource,
-  Collaboratore,
+  Dipendente,
   ActivityLog,
   FatturaEmessa,
   FatturaConsulente,
@@ -180,7 +180,7 @@ export const tagsStorage = new JSONFileStorage<Tag>('tags.json');
 export const projectTagsStorage = new JSONFileStorage<ProjectTag & { id: string }>('project-tags.json');
 export const fileRoutingsStorage = new JSONFileStorage<FileRouting>('file-routings.json');
 export const projectResourcesStorage = new JSONFileStorage<ProjectResource>('project-resources.json');
-export const collaboratoriStorage = new JSONFileStorage<Collaboratore>('collaboratori.json');
+export const dipendentiStorage = new JSONFileStorage<Dipendente>('dipendenti.json');
 
 // Nuovi storage
 export const activityLogsStorage = new JSONFileStorage<ActivityLog>('activity-logs.json');

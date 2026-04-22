@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, invalidateDashboard } from "@/lib/queryClient";
 import { Plus, Pencil, Trash2, Building, Check, Clock, Euro, Download, ArrowUp, ArrowDown, X, Users, RefreshCcw, Upload } from "lucide-react";
-import type { CostoGenerale, Collaboratore } from "@shared/schema";
+import type { CostoGenerale, Dipendente } from "@shared/schema";
 import { formatCurrency, formatCurrencyFromCents, formatDate, toCents, fromCents } from "@/lib/financial-utils";
 import { usePagination } from "@/hooks/usePagination";
 import { TablePagination } from "@/components/ui/table-pagination";
@@ -83,21 +83,21 @@ export default function CostiGenerali() {
     dataPagamento: "",
     allegato: "",
     note: "",
-    collaboratoreId: "" as string,
+    dipendenteId: "" as string,
     periodicita: "" as Periodicita | "",
   });
 
-  // Collaboratori dipendenti per il Select "Stipendi" (solo attivi + flag dipendente).
+  // Dipendenti per il Select "Stipendi" (solo attivi).
   // stipendioMensile è presente solo per admin (sanitize lato server).
-  const { data: collaboratori = [] } = useQuery<Collaboratore[]>({
-    queryKey: ["/api/collaboratori"],
+  const { data: dipendenti = [] } = useQuery<Dipendente[]>({
+    queryKey: ["/api/dipendenti"],
     queryFn: async () => {
-      const response = await apiRequest("GET", "/api/collaboratori");
-      if (!response.ok) throw new Error("Failed to fetch collaboratori");
+      const response = await apiRequest("GET", "/api/dipendenti");
+      if (!response.ok) throw new Error("Failed to fetch dipendenti");
       return response.json();
     },
   });
-  const dipendentiAttivi = collaboratori.filter(c => c.active && c.isDipendente);
+  const dipendentiAttivi = dipendenti.filter(c => c.active);
 
   const { data: costi = [], isLoading } = useQuery<CostoGenerale[]>({
     queryKey: ["/api/costi-generali"],
@@ -170,7 +170,7 @@ export default function CostiGenerali() {
     meseLabel: string;
     nettoInBusta: number;
     nomePdf: string | null;
-    collaboratoreId: string | null;
+    dipendenteId: string | null;
     collaboratoreNome: string | null;
     warning: string | null;
     // Marker locale: se true l'admin vuole includere questa riga nel commit.
@@ -181,9 +181,12 @@ export default function CostiGenerali() {
   const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
 
   const uploadBustePagaMutation = useMutation({
-    mutationFn: async (files: FileList) => {
+    // Accetto File[]: il chiamante deve fare Array.from(FileList) PRIMA di
+    // chiamare mutate, perché reset dell'input file svuota il FileList
+    // (la mutazione gira asincrona, il FileList sarebbe già vuoto).
+    mutationFn: async (files: File[]) => {
       const formData = new FormData();
-      Array.from(files).forEach(f => formData.append("files", f));
+      files.forEach(f => formData.append("files", f));
       const response = await fetch("/api/costi-generali/upload-buste-paga", {
         method: "POST",
         body: formData,
@@ -223,7 +226,7 @@ export default function CostiGenerali() {
       const payload = {
         items: items.filter(i => i.include).map(i => ({
           fileUrl: i.fileUrl,
-          collaboratoreId: i.collaboratoreId,
+          dipendenteId: i.dipendenteId,
           periodo: i.periodo,
           nettoInBusta: i.nettoInBusta,
         })),
@@ -273,7 +276,7 @@ export default function CostiGenerali() {
       dataPagamento: "",
       allegato: "",
       note: "",
-      collaboratoreId: "",
+      dipendenteId: "",
       periodicita: "",
     });
     setEditingCosto(null);
@@ -293,7 +296,7 @@ export default function CostiGenerali() {
       dataPagamento: costo.dataPagamento || "",
       allegato: costo.allegato || "",
       note: costo.note || "",
-      collaboratoreId: costo.collaboratoreId || "",
+      dipendenteId: costo.dipendenteId || "",
       periodicita: costo.periodicita || "",
     });
     setIsDialogOpen(true);
@@ -304,7 +307,7 @@ export default function CostiGenerali() {
 
     // Per gli stipendi il Select dipendenti è obbligatorio: feedback inline
     // invece che attendere il 400 del server.
-    if (formData.categoria === "stipendi" && !formData.collaboratoreId) {
+    if (formData.categoria === "stipendi" && !formData.dipendenteId) {
       toast({
         title: "Dipendente non selezionato",
         description: "Seleziona un dipendente per registrare la busta paga.",
@@ -333,9 +336,9 @@ export default function CostiGenerali() {
     if (!cleanData.dataPagamento) delete cleanData.dataPagamento;
     if (!cleanData.allegato) delete cleanData.allegato;
     if (!cleanData.note) delete cleanData.note;
-    // collaboratoreId è valorizzato solo per categoria "stipendi". Se vuoto
+    // dipendenteId è valorizzato solo per categoria "stipendi". Se vuoto
     // non va inviato (il campo è opzionale nello schema).
-    if (!cleanData.collaboratoreId) delete cleanData.collaboratoreId;
+    if (!cleanData.dipendenteId) delete cleanData.dipendenteId;
     // periodicita è valorizzata solo per categoria "abbonamento". Se vuota
     // (es. categoria diversa) non va inviata.
     if (!cleanData.periodicita) delete cleanData.periodicita;
@@ -488,9 +491,12 @@ export default function CostiGenerali() {
                 multiple
                 className="hidden"
                 onChange={(e) => {
-                  const files = e.target.files;
-                  if (files && files.length > 0) {
-                    uploadBustePagaMutation.mutate(files);
+                  // Snapshot sincrono: il FileList dell'input diventa vuoto
+                  // non appena resettiamo `.value = ""` sotto, e la mutation
+                  // parte asincrona. Serve copiare in Array ORA.
+                  const filesArray = e.target.files ? Array.from(e.target.files) : [];
+                  if (filesArray.length > 0) {
+                    uploadBustePagaMutation.mutate(filesArray);
                   }
                   // reset in modo da poter ricaricare lo stesso file se serve
                   if (bustePagaInputRef.current) bustePagaInputRef.current.value = "";
@@ -656,7 +662,7 @@ export default function CostiGenerali() {
                     setFormData(prev => {
                       // Il payee ha regole diverse tra stipendi (select chiuso su
                       // dipendenti) e fornitori (free text). Quando si passa
-                      // da un tipo all'altro resettiamo il payee + collaboratoreId
+                      // da un tipo all'altro resettiamo il payee + dipendenteId
                       // per evitare mismatch (es. "ENEL" come nome dipendente).
                       const changingFromOrToStipendi = (prev.categoria === "stipendi") !== (next === "stipendi");
                       // La periodicità ha senso solo per abbonamenti: quando
@@ -666,7 +672,7 @@ export default function CostiGenerali() {
                       return {
                         ...prev,
                         categoria: next,
-                        ...(changingFromOrToStipendi ? { fornitore: "", collaboratoreId: "" } : {}),
+                        ...(changingFromOrToStipendi ? { fornitore: "", dipendenteId: "" } : {}),
                         ...(leavingAbbonamento ? { periodicita: "" as Periodicita | "" } : {}),
                       };
                     });
@@ -690,17 +696,17 @@ export default function CostiGenerali() {
                 {formData.categoria === "stipendi" ? (
                   // Per gli stipendi: select chiuso sui soli dipendenti attivi.
                   // Nessun testo libero per evitare errori di battitura e
-                  // per poter auto-popolare importo + collaboratoreId.
+                  // per poter auto-popolare importo + dipendenteId.
                   <>
                   <Select
-                    value={formData.collaboratoreId || ""}
+                    value={formData.dipendenteId || ""}
                     disabled={!!editingCosto}
                     onValueChange={(value) => {
                       const c = dipendentiAttivi.find(d => d.id === value);
                       if (!c) return;
                       setFormData(prev => ({
                         ...prev,
-                        collaboratoreId: c.id,
+                        dipendenteId: c.id,
                         fornitore: `${c.nome} ${c.cognome}`.trim(),
                         // Auto-popola l'importo solo se lo stipendio è
                         // visibile (admin). Per i non-admin il campo rimane
@@ -719,7 +725,7 @@ export default function CostiGenerali() {
                     <SelectContent>
                       {dipendentiAttivi.length === 0 ? (
                         <div className="px-2 py-2 text-sm text-gray-500">
-                          Nessun dipendente attivo. Vai in Anagrafica Collaboratori per configurarli.
+                          Nessun dipendente attivo. Vai in Anagrafica Dipendenti per configurarli.
                         </div>
                       ) : (
                         dipendentiAttivi.map(c => (
@@ -996,11 +1002,11 @@ export default function CostiGenerali() {
                         <div className="space-y-1">
                           <Label className="text-xs">Dipendente *</Label>
                           <Select
-                            value={item.collaboratoreId || ""}
+                            value={item.dipendenteId || ""}
                             onValueChange={(value) => {
                               const c = dipendentiAttivi.find(d => d.id === value);
                               updateItem({
-                                collaboratoreId: c?.id || null,
+                                dipendenteId: c?.id || null,
                                 collaboratoreNome: c ? `${c.nome} ${c.cognome}`.trim() : null,
                                 warning: c ? null : item.warning,
                               });
@@ -1074,7 +1080,7 @@ export default function CostiGenerali() {
               disabled={
                 commitBustePagaMutation.isPending ||
                 previewItems.filter(i => i.include).length === 0 ||
-                previewItems.some(i => i.include && (!i.collaboratoreId || !i.periodo || !i.nettoInBusta))
+                previewItems.some(i => i.include && (!i.dipendenteId || !i.periodo || !i.nettoInBusta))
               }
             >
               {commitBustePagaMutation.isPending

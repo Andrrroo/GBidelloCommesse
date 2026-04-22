@@ -13,7 +13,7 @@ import { resourcesRouter } from './resources.js';
 import { usersRouter } from './users.js';
 import { systemRouter } from './system.js';
 import { dashboardRouter } from './dashboard.js';
-import { collaboratoriRouter } from './collaboratori.js';
+import { dipendentiRouter } from './dipendenti.js';
 import { calendarRouter } from './calendar.js';
 
 export const router = Router();
@@ -49,9 +49,10 @@ router.use('/api/users', (req: Request, res: Response, next: NextFunction) => {
   return requireAdmin(req, res, next);
 });
 
-// Collaboratori anagrafica: scrittura solo admin (il costoOrario è stipendio
-// sensibile). GET sanitizza costoOrario per non-admin via collaboratori.ts.
-router.use('/api/collaboratori', (req: Request, res: Response, next: NextFunction) => {
+// Dipendenti anagrafica: scrittura solo admin (costoOrario/stipendioMensile
+// sono informazioni di payroll sensibili). GET li sanitizza per non-admin
+// via server/routes/dipendenti.ts.
+router.use('/api/dipendenti', (req: Request, res: Response, next: NextFunction) => {
   if (req.method !== 'GET') return requireAdmin(req, res, next);
   next();
 });
@@ -100,5 +101,5 @@ router.use(resourcesRouter);
 router.use(usersRouter);
 router.use(systemRouter);
 router.use(dashboardRouter);
-router.use(collaboratoriRouter);
+router.use(dipendentiRouter);
 router.use(calendarRouter);

@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
-import { collaboratoriStorage, costiGeneraliStorage } from '../storage.js';
-import type { Collaboratore, CostoGenerale } from '@shared/schema';
+import { dipendentiStorage, costiGeneraliStorage } from '../storage.js';
+import type { Dipendente, CostoGenerale } from '@shared/schema';
 import { logger } from './logger.js';
 
 // Auto-generazione buste paga ricorrenti.
@@ -10,7 +10,7 @@ import { logger } from './logger.js';
 // crea automaticamente un nuovo record ogni mese, nel giorno del mese
 // corrispondente a quello della busta paga più recente.
 //
-// Idempotente sul coppia (collaboratoreId, periodo): il batch generator
+// Idempotente sul coppia (dipendenteId, periodo): il batch generator
 // già esistente usa la stessa chiave, quindi una generazione manuale e
 // una automatica per lo stesso periodo non si duplicano.
 //
@@ -53,9 +53,9 @@ function todayIsoDate(): string {
 
 // Sceglie la busta paga più recente per il dipendente come riferimento per
 // calcolare quando scade il prossimo record auto-generato.
-function latestPayrollFor(costi: CostoGenerale[], collaboratoreId: string): CostoGenerale | null {
+function latestPayrollFor(costi: CostoGenerale[], dipendenteId: string): CostoGenerale | null {
   const own = costi.filter(
-    c => c.categoria === 'stipendi' && c.collaboratoreId === collaboratoreId && typeof c.periodo === 'string'
+    c => c.categoria === 'stipendi' && c.dipendenteId === dipendenteId && typeof c.periodo === 'string'
   );
   if (own.length === 0) return null;
   // Ordino per periodo decrescente (lessicografico su YYYY-MM funziona).
@@ -63,8 +63,8 @@ function latestPayrollFor(costi: CostoGenerale[], collaboratoreId: string): Cost
   return own[0];
 }
 
-async function processDipendente(c: Collaboratore): Promise<number> {
-  if (!c.active || !c.isDipendente) return 0;
+async function processDipendente(c: Dipendente): Promise<number> {
+  if (!c.active) return 0;
   if (typeof c.stipendioMensile !== 'number' || c.stipendioMensile <= 0) return 0;
 
   const costi = await costiGeneraliStorage.readAll();
@@ -88,11 +88,11 @@ async function processDipendente(c: Collaboratore): Promise<number> {
 
     // Idempotenza (doppia sicura): se esiste già per questo periodo, interrompo.
     const exists = costi.some(
-      x => x.categoria === 'stipendi' && x.collaboratoreId === c.id && x.periodo === targetPeriodo
+      x => x.categoria === 'stipendi' && x.dipendenteId === c.id && x.periodo === targetPeriodo
     );
     if (exists) {
       latest = costi.find(
-        x => x.categoria === 'stipendi' && x.collaboratoreId === c.id && x.periodo === targetPeriodo
+        x => x.categoria === 'stipendi' && x.dipendenteId === c.id && x.periodo === targetPeriodo
       )!;
       continue;
     }
@@ -109,7 +109,7 @@ async function processDipendente(c: Collaboratore): Promise<number> {
       dataScadenza: targetData,
       importo: c.stipendioMensile,
       pagato: false,
-      collaboratoreId: c.id,
+      dipendenteId: c.id,
       periodo: targetPeriodo,
     };
     await costiGeneraliStorage.create(costo);
@@ -126,13 +126,13 @@ async function processDipendente(c: Collaboratore): Promise<number> {
  * Da chiamare all'avvio del server e poi periodicamente via schedulePayrollAutoGen.
  */
 export async function runPayrollAutoGen(): Promise<{ totalCreated: number }> {
-  const collaboratori = await collaboratoriStorage.readAll();
+  const dipendenti = await dipendentiStorage.readAll();
   let totalCreated = 0;
-  for (const c of collaboratori) {
+  for (const c of dipendenti) {
     try {
       totalCreated += await processDipendente(c);
     } catch (err) {
-      logger.error('Auto-gen payroll failed per dipendente', { err, collaboratoreId: c.id });
+      logger.error('Auto-gen payroll failed per dipendente', { err, dipendenteId: c.id });
     }
   }
   if (totalCreated > 0) {
@@ -143,23 +143,23 @@ export async function runPayrollAutoGen(): Promise<{ totalCreated: number }> {
 
 /**
  * Bootstrap: crea la prima busta paga per un dipendente se non ne ha ancora
- * nessuna. Da chiamare quando un Collaboratore viene creato/aggiornato e la
+ * nessuna. Da chiamare quando un Dipendente viene creato/aggiornato e la
  * sua configurazione finale è attiva + dipendente + stipendio valorizzato.
  *
  * Il record bootstrap è per il mese corrente, con data = oggi (diventa
  * l'anchor day che il cron userà per le generazioni ricorrenti).
  * Idempotente: se esiste già una qualunque busta paga per questo
- * collaboratore, non fa nulla.
+ * dipendente, non fa nulla.
  */
-export async function ensurePayrollBootstrap(collaboratoreId: string): Promise<CostoGenerale | null> {
-  const c = await collaboratoriStorage.findById(collaboratoreId);
+export async function ensurePayrollBootstrap(dipendenteId: string): Promise<CostoGenerale | null> {
+  const c = await dipendentiStorage.findById(dipendenteId);
   if (!c) return null;
-  if (!c.active || !c.isDipendente) return null;
+  if (!c.active) return null;
   if (typeof c.stipendioMensile !== 'number' || c.stipendioMensile <= 0) return null;
 
   const costi = await costiGeneraliStorage.readAll();
   const hasPregressa = costi.some(
-    x => x.categoria === 'stipendi' && x.collaboratoreId === c.id
+    x => x.categoria === 'stipendi' && x.dipendenteId === c.id
   );
   if (hasPregressa) return null;
 
@@ -176,11 +176,11 @@ export async function ensurePayrollBootstrap(collaboratoreId: string): Promise<C
     dataScadenza: todayStr,
     importo: c.stipendioMensile,
     pagato: false,
-    collaboratoreId: c.id,
+    dipendenteId: c.id,
     periodo,
   };
   await costiGeneraliStorage.create(costo);
-  logger.info('Bootstrap busta paga dipendente', { collaboratoreId: c.id, periodo });
+  logger.info('Bootstrap busta paga dipendente', { dipendenteId: c.id, periodo });
   return costo;
 }
 

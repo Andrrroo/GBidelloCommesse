@@ -14,16 +14,16 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { formatCurrency } from "@/lib/financial-utils";
 import { Plus, Pencil, Trash2, Euro, UserSquare2 } from "lucide-react";
-import type { Collaboratore } from "@shared/schema";
+import type { Dipendente } from "@shared/schema";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { COLLABORATORE_ROLES, getRoleLabel } from "@/lib/collaboratori-roles";
+import { DIPENDENTE_ROLES, getRoleLabel } from "@/lib/dipendenti-roles";
 
-export default function CollaboratoriManagement() {
+export default function DipendentiManagement() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [collabToDelete, setCollabToDelete] = useState<Collaboratore | null>(null);
-  const [editing, setEditing] = useState<Collaboratore | null>(null);
+  const [toDelete, setToDelete] = useState<Dipendente | null>(null);
+  const [editing, setEditing] = useState<Dipendente | null>(null);
   const emptyForm = {
     nome: "",
     cognome: "",
@@ -32,61 +32,60 @@ export default function CollaboratoriManagement() {
     ruolo: "",
     costoOrario: "" as string | number,
     active: true,
-    isDipendente: false,
     stipendioMensile: "" as string | number,
     codiceFiscale: "",
     note: "",
   };
   const [formData, setFormData] = useState(emptyForm);
 
-  const { data: collaboratori = [], isLoading } = useQuery<Collaboratore[]>({
-    queryKey: ["/api/collaboratori"],
+  const { data: dipendenti = [], isLoading } = useQuery<Dipendente[]>({
+    queryKey: ["/api/dipendenti"],
     queryFn: async () => {
-      const response = await apiRequest("GET", "/api/collaboratori");
+      const response = await apiRequest("GET", "/api/dipendenti");
       if (!response.ok) throw new Error("Failed to fetch");
       return response.json();
     }
   });
 
   const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: ["/api/collaboratori"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/dipendenti"] });
   };
 
   const createMutation = useMutation({
     mutationFn: async (data: any) => {
-      const response = await apiRequest("POST", "/api/collaboratori", data);
+      const response = await apiRequest("POST", "/api/dipendenti", data);
       if (!response.ok) {
         const err = await response.json();
         throw new Error(err.message || err.error || "Errore creazione");
       }
       return response.json();
     },
-    onSuccess: () => { invalidate(); toast({ title: "Collaboratore creato" }); resetForm(); },
+    onSuccess: () => { invalidate(); toast({ title: "Dipendente creato" }); resetForm(); },
     onError: (e: Error) => toast({ title: "Errore", description: e.message, variant: "destructive" }),
   });
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: any }) => {
-      const response = await apiRequest("PUT", `/api/collaboratori/${id}`, data);
+      const response = await apiRequest("PUT", `/api/dipendenti/${id}`, data);
       if (!response.ok) {
         const err = await response.json();
         throw new Error(err.message || err.error || "Errore aggiornamento");
       }
       return response.json();
     },
-    onSuccess: () => { invalidate(); toast({ title: "Collaboratore aggiornato" }); resetForm(); },
+    onSuccess: () => { invalidate(); toast({ title: "Dipendente aggiornato" }); resetForm(); },
     onError: (e: Error) => toast({ title: "Errore", description: e.message, variant: "destructive" }),
   });
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      const response = await apiRequest("DELETE", `/api/collaboratori/${id}`);
+      const response = await apiRequest("DELETE", `/api/dipendenti/${id}`);
       if (!response.ok && response.status !== 204) {
         const err = await response.json();
         throw new Error(err.message || err.error || "Errore eliminazione");
       }
     },
-    onSuccess: () => { invalidate(); toast({ title: "Collaboratore eliminato" }); },
+    onSuccess: () => { invalidate(); toast({ title: "Dipendente eliminato" }); },
     onError: (e: Error) => toast({ title: "Errore", description: e.message, variant: "destructive" }),
   });
 
@@ -96,20 +95,19 @@ export default function CollaboratoriManagement() {
     setIsDialogOpen(false);
   };
 
-  const handleEdit = (c: Collaboratore) => {
-    setEditing(c);
+  const handleEdit = (d: Dipendente) => {
+    setEditing(d);
     setFormData({
-      nome: c.nome,
-      cognome: c.cognome,
-      email: c.email || "",
-      telefono: c.telefono || "",
-      ruolo: c.ruolo || "",
-      costoOrario: c.costoOrario,
-      active: c.active,
-      isDipendente: c.isDipendente ?? false,
-      stipendioMensile: c.stipendioMensile ?? "",
-      codiceFiscale: c.codiceFiscale || "",
-      note: c.note || "",
+      nome: d.nome,
+      cognome: d.cognome,
+      email: d.email || "",
+      telefono: d.telefono || "",
+      ruolo: d.ruolo || "",
+      costoOrario: d.costoOrario,
+      active: d.active,
+      stipendioMensile: d.stipendioMensile ?? "",
+      codiceFiscale: d.codiceFiscale || "",
+      note: d.note || "",
     });
     setIsDialogOpen(true);
   };
@@ -125,10 +123,11 @@ export default function CollaboratoriManagement() {
     if (!cleanData.ruolo) delete cleanData.ruolo;
     if (!cleanData.note) delete cleanData.note;
 
-    // stipendioMensile: se non dipendente → non invio il campo. Se dipendente,
-    // parse a numero; 0 o vuoto fallisce la validazione Zod (positive).
-    if (cleanData.isDipendente) {
-      cleanData.stipendioMensile = parseFloat(String(formData.stipendioMensile)) || 0;
+    // stipendioMensile: opzionale. Se vuoto non invio il campo; se presente,
+    // parso a numero e Zod valida (positive). Se set → attiva l'auto-payroll.
+    const parsedStip = parseFloat(String(formData.stipendioMensile));
+    if (isFinite(parsedStip) && parsedStip > 0) {
+      cleanData.stipendioMensile = parsedStip;
     } else {
       delete cleanData.stipendioMensile;
     }
@@ -153,11 +152,11 @@ export default function CollaboratoriManagement() {
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="flex items-center gap-2">
           <UserSquare2 className="h-5 w-5" />
-          Anagrafica Collaboratori
+          Anagrafica Dipendenti
         </CardTitle>
         <Button onClick={() => setIsDialogOpen(true)} size="sm">
           <Plus className="h-4 w-4 mr-1" />
-          Nuovo Collaboratore
+          Nuovo Dipendente
         </Button>
       </CardHeader>
       <CardContent>
@@ -166,16 +165,15 @@ export default function CollaboratoriManagement() {
             <div className="h-10 bg-gray-200 rounded-md"></div>
             <div className="h-10 bg-gray-200 rounded-md"></div>
           </div>
-        ) : collaboratori.length === 0 ? (
+        ) : dipendenti.length === 0 ? (
           <p className="text-center text-gray-500 py-8">
-            Nessun collaboratore nell'anagrafica. Clicca "Nuovo Collaboratore" per iniziare.
+            Nessun dipendente nell'anagrafica. Clicca "Nuovo Dipendente" per iniziare.
           </p>
         ) : (
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Nome</TableHead>
-                <TableHead>Tipo</TableHead>
                 <TableHead>Ruolo</TableHead>
                 <TableHead>Contatti</TableHead>
                 <TableHead className="text-right">Costo Orario</TableHead>
@@ -185,42 +183,35 @@ export default function CollaboratoriManagement() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {collaboratori.map((c) => (
-                <TableRow key={c.id}>
-                  <TableCell className="font-medium">{c.nome} {c.cognome}</TableCell>
-                  <TableCell>
-                    {c.isDipendente ? (
-                      <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">Dipendente</Badge>
-                    ) : (
-                      <Badge variant="outline" className="text-gray-600">Consulente</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-gray-600">{c.ruolo ? getRoleLabel(c.ruolo) : "-"}</TableCell>
+              {dipendenti.map((d) => (
+                <TableRow key={d.id}>
+                  <TableCell className="font-medium">{d.nome} {d.cognome}</TableCell>
+                  <TableCell className="text-gray-600">{d.ruolo ? getRoleLabel(d.ruolo) : "-"}</TableCell>
                   <TableCell className="text-xs text-gray-500">
-                    {c.email && <div>{c.email}</div>}
-                    {c.telefono && <div>{c.telefono}</div>}
-                    {!c.email && !c.telefono && "-"}
+                    {d.email && <div>{d.email}</div>}
+                    {d.telefono && <div>{d.telefono}</div>}
+                    {!d.email && !d.telefono && "-"}
                   </TableCell>
                   <TableCell className="text-right font-semibold">
-                    {formatCurrency(c.costoOrario)}/h
+                    {formatCurrency(d.costoOrario)}/h
                   </TableCell>
                   <TableCell className="text-right font-semibold">
-                    {c.isDipendente && typeof c.stipendioMensile === 'number' ? formatCurrency(c.stipendioMensile) : <span className="text-gray-400">-</span>}
+                    {typeof d.stipendioMensile === 'number' && d.stipendioMensile > 0 ? formatCurrency(d.stipendioMensile) : <span className="text-gray-400">-</span>}
                   </TableCell>
                   <TableCell className="text-center">
-                    <Badge variant={c.active ? "default" : "secondary"}>
-                      {c.active ? "Attivo" : "Disattivato"}
+                    <Badge variant={d.active ? "default" : "secondary"}>
+                      {d.active ? "Attivo" : "Disattivato"}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
-                      <Button variant="ghost" size="sm" onClick={() => handleEdit(c)}>
+                      <Button variant="ghost" size="sm" onClick={() => handleEdit(d)}>
                         <Pencil className="h-4 w-4" />
                       </Button>
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => setCollabToDelete(c)}
+                        onClick={() => setToDelete(d)}
                       >
                         <Trash2 className="h-4 w-4 text-red-500" />
                       </Button>
@@ -236,7 +227,7 @@ export default function CollaboratoriManagement() {
           <DialogContent className="max-h-[90vh] flex flex-col">
             <DialogHeader>
               <DialogTitle>
-                {editing ? "Modifica Collaboratore" : "Nuovo Collaboratore"}
+                {editing ? "Modifica Dipendente" : "Nuovo Dipendente"}
               </DialogTitle>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4 overflow-y-auto overflow-x-hidden px-1 py-1 flex-1">
@@ -267,11 +258,11 @@ export default function CollaboratoriManagement() {
                   value={formData.ruolo || ""}
                   onValueChange={(v) => setFormData(prev => ({ ...prev, ruolo: v }))}
                 >
-                  <SelectTrigger id="ruolo" aria-label="Ruolo del collaboratore">
+                  <SelectTrigger id="ruolo" aria-label="Ruolo del dipendente">
                     <SelectValue placeholder="Seleziona un ruolo..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {COLLABORATORE_ROLES.map(role => {
+                    {DIPENDENTE_ROLES.map(role => {
                       const Icon = role.icon;
                       return (
                         <SelectItem key={role.value} value={role.value}>
@@ -324,46 +315,30 @@ export default function CollaboratoriManagement() {
               </div>
 
               <div className="rounded-lg border-2 border-blue-200 bg-blue-50/60 p-3 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label htmlFor="isDipendente" className="font-semibold cursor-pointer text-blue-900">Dipendente (busta paga automatica)</Label>
-                    <p className="text-xs text-blue-700/80 mt-0.5">Se attivo, la busta paga viene generata mensilmente in Costi Generali</p>
-                  </div>
-                  <Switch
-                    id="isDipendente"
-                    className="data-[state=checked]:bg-blue-600 data-[state=unchecked]:bg-gray-300"
-                    checked={formData.isDipendente}
-                    onCheckedChange={(checked) => setFormData(prev => ({ ...prev, isDipendente: checked }))}
-                  />
+                <div>
+                  <p className="font-semibold text-blue-900">Payroll automatico</p>
+                  <p className="text-xs text-blue-700/80 mt-0.5">Imposta lo stipendio mensile per attivare la generazione automatica delle buste paga in Costi Generali.</p>
                 </div>
                 <div className="space-y-2">
-                  <Label
-                    htmlFor="stipendioMensile"
-                    className={formData.isDipendente ? "text-blue-900" : "text-gray-400"}
-                  >
-                    Stipendio Mensile (EUR) {formData.isDipendente && <span className="text-red-500">*</span>}
+                  <Label htmlFor="stipendioMensile" className="text-blue-900">
+                    Stipendio Mensile (EUR)
                   </Label>
                   <div className="relative">
-                    <Euro className={`absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 ${formData.isDipendente ? 'text-gray-500' : 'text-gray-300'}`} />
+                    <Euro className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
                     <Input
                       id="stipendioMensile"
                       type="number"
                       step="50"
                       min="0"
                       className="pl-9"
-                      placeholder={formData.isDipendente ? "es. 1800" : "Attiva \"Dipendente\" per impostare lo stipendio"}
-                      disabled={!formData.isDipendente}
+                      placeholder="es. 1800 (lascia vuoto per disattivare)"
                       value={formData.stipendioMensile}
                       onChange={(e) => setFormData(prev => ({ ...prev, stipendioMensile: e.target.value }))}
-                      required={formData.isDipendente}
                     />
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label
-                    htmlFor="codiceFiscale"
-                    className={formData.isDipendente ? "text-blue-900" : "text-gray-400"}
-                  >
+                  <Label htmlFor="codiceFiscale" className="text-blue-900">
                     Codice Fiscale
                   </Label>
                   <Input
@@ -371,8 +346,7 @@ export default function CollaboratoriManagement() {
                     type="text"
                     maxLength={16}
                     className="uppercase font-mono tracking-wide"
-                    placeholder={formData.isDipendente ? "es. RSSMRA80A01H501Z" : "—"}
-                    disabled={!formData.isDipendente}
+                    placeholder="es. RSSMRA80A01H501Z"
                     value={formData.codiceFiscale}
                     onChange={(e) => setFormData(prev => ({ ...prev, codiceFiscale: e.target.value.toUpperCase() }))}
                   />
@@ -414,14 +388,14 @@ export default function CollaboratoriManagement() {
           </DialogContent>
         </Dialog>
 
-        {/* Conferma eliminazione collaboratore */}
-        <AlertDialog open={!!collabToDelete} onOpenChange={(open) => !open && setCollabToDelete(null)}>
+        {/* Conferma eliminazione dipendente */}
+        <AlertDialog open={!!toDelete} onOpenChange={(open) => !open && setToDelete(null)}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Eliminare il collaboratore?</AlertDialogTitle>
+              <AlertDialogTitle>Eliminare il dipendente?</AlertDialogTitle>
               <AlertDialogDescription>
-                {collabToDelete && (
-                  <>Stai per eliminare <strong>{collabToDelete.nome} {collabToDelete.cognome}</strong>. L'azione non può essere annullata.</>
+                {toDelete && (
+                  <>Stai per eliminare <strong>{toDelete.nome} {toDelete.cognome}</strong>. L'azione non può essere annullata.</>
                 )}
               </AlertDialogDescription>
             </AlertDialogHeader>
@@ -429,8 +403,8 @@ export default function CollaboratoriManagement() {
               <AlertDialogCancel>Annulla</AlertDialogCancel>
               <AlertDialogAction
                 onClick={() => {
-                  if (collabToDelete) deleteMutation.mutate(collabToDelete.id);
-                  setCollabToDelete(null);
+                  if (toDelete) deleteMutation.mutate(toDelete.id);
+                  setToDelete(null);
                 }}
                 className="bg-red-600 hover:bg-red-700"
               >

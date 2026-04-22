@@ -13,7 +13,7 @@ const META_FILE = path.join(DATA_DIR, '_schema-version.json');
 // VERSIONE ATTUALE DELLO SCHEMA
 // Incrementare di 1 ogni volta che si introduce una migrazione in `MIGRATIONS`.
 // ----------------------------------------------------------------------------
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 /**
  * Ogni migrazione riceve il percorso di `data/` e fa in-place i cambiamenti
@@ -26,6 +26,26 @@ export const SCHEMA_VERSION = 6;
  * schema, aggiungere qui una funzione con indice = versione target.
  */
 type MigrationFn = (dataDir: string) => Promise<void>;
+
+// Helper usato da v7: applica una trasformazione a ciascun record di un
+// file JSON array, salva solo se qualcosa è cambiato.
+async function mutateJsonArray(
+  filePath: string,
+  mutate: (record: any) => boolean
+): Promise<void> {
+  try {
+    const raw = await fs.readFile(filePath, 'utf-8');
+    const items = JSON.parse(raw);
+    if (!Array.isArray(items)) return;
+    let changed = false;
+    for (const it of items) {
+      if (it && typeof it === 'object' && mutate(it)) changed = true;
+    }
+    if (changed) await fs.writeFile(filePath, JSON.stringify(items, null, 2), 'utf-8');
+  } catch {
+    // file assente: nulla da fare
+  }
+}
 
 const MIGRATIONS: Record<number, MigrationFn> = {
   // v2 — merge di ProfiloCosto in Collaboratore:
@@ -57,6 +77,44 @@ const MIGRATIONS: Record<number, MigrationFn> = {
       await fs.unlink(path.join(dataDir, 'profili-costo.json'));
     } catch {
       // già assente: ok
+    }
+  },
+
+  // v7 — rename Collaboratore → Dipendente (anagrafica, non ruolo utente):
+  //   - rinomina file data/collaboratori.json → data/dipendenti.json
+  //   - rinomina field collaboratoreId → dipendenteId nei record di
+  //     costi-generali.json, project-resources.json, users.json
+  //   - rimuove il campo isDipendente dai record esistenti (obsoleto:
+  //     tutti in anagrafica sono dipendenti ora)
+  7: async (dataDir) => {
+    // 1) rename del file
+    const oldPath = path.join(dataDir, 'collaboratori.json');
+    const newPath = path.join(dataDir, 'dipendenti.json');
+    try {
+      await fs.rename(oldPath, newPath);
+    } catch {
+      // già rinominato o assente: ok
+    }
+    // 2) pulisci isDipendente nei record dipendenti (cosmetico, non bloccante)
+    await mutateJsonArray(newPath, (rec) => {
+      if ('isDipendente' in rec) { delete rec.isDipendente; return true; }
+      return false;
+    });
+    // 3) rinomina collaboratoreId → dipendenteId nei file collegati
+    const filesToPatch = [
+      path.join(dataDir, 'costi-generali.json'),
+      path.join(dataDir, 'project-resources.json'),
+      path.join(dataDir, 'users.json'),
+    ];
+    for (const f of filesToPatch) {
+      await mutateJsonArray(f, (rec) => {
+        if ('collaboratoreId' in rec) {
+          if (!('dipendenteId' in rec)) rec.dipendenteId = rec.collaboratoreId;
+          delete rec.collaboratoreId;
+          return true;
+        }
+        return false;
+      });
     }
   },
 

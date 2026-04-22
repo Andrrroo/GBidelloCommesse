@@ -16,7 +16,7 @@ export interface User {
   role: UserRole;
   nome: string;
   email: string;
-  collaboratoreId?: string;
+  dipendenteId?: string;
 }
 
 export function useAuth() {

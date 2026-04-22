@@ -5,15 +5,15 @@ import {
 } from "lucide-react";
 
 /**
- * Ruoli standard per un collaboratore tecnico.
- * Condivisi tra anagrafica Collaboratori e Gestione Risorse commesse, così
- * un collaboratore salvato in anagrafica con un dato ruolo si auto-mappa
+ * Ruoli standard per un dipendente tecnico.
+ * Condivisi tra anagrafica Dipendenti e Gestione Risorse commesse, così
+ * un dipendente salvato in anagrafica con un dato ruolo si auto-mappa
  * correttamente nel Select del form di gestione risorse.
  *
- * `value` è la chiave salvata nel campo `ruolo` del Collaboratore e nel
+ * `value` è la chiave salvata nel campo `ruolo` del Dipendente e nel
  * campo `role` della ProjectResource.
  */
-export const COLLABORATORE_ROLES: { value: string; label: string; icon: LucideIcon }[] = [
+export const DIPENDENTE_ROLES: { value: string; label: string; icon: LucideIcon }[] = [
   { value: "progettista",   label: "Progettista",                                  icon: Ruler },
   { value: "dl",            label: "Direttore Lavori",                             icon: HardHat },
   { value: "csp",           label: "CSP - Coordinatore Sicurezza Progettazione",  icon: Shield },
@@ -29,6 +29,6 @@ export const COLLABORATORE_ROLES: { value: string; label: string; icon: LucideIc
 /** Restituisce la label leggibile dato il value del ruolo (fallback: il value stesso) */
 export function getRoleLabel(value: string | undefined | null): string {
   if (!value) return "-";
-  const r = COLLABORATORE_ROLES.find(x => x.value === value);
+  const r = DIPENDENTE_ROLES.find(x => x.value === value);
   return r ? r.label : value;
 }
