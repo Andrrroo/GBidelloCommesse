@@ -142,6 +142,49 @@ export async function runPayrollAutoGen(): Promise<{ totalCreated: number }> {
 }
 
 /**
+ * Bootstrap: crea la prima busta paga per un dipendente se non ne ha ancora
+ * nessuna. Da chiamare quando un Collaboratore viene creato/aggiornato e la
+ * sua configurazione finale è attiva + dipendente + stipendio valorizzato.
+ *
+ * Il record bootstrap è per il mese corrente, con data = oggi (diventa
+ * l'anchor day che il cron userà per le generazioni ricorrenti).
+ * Idempotente: se esiste già una qualunque busta paga per questo
+ * collaboratore, non fa nulla.
+ */
+export async function ensurePayrollBootstrap(collaboratoreId: string): Promise<CostoGenerale | null> {
+  const c = await collaboratoriStorage.findById(collaboratoreId);
+  if (!c) return null;
+  if (!c.active || !c.isDipendente) return null;
+  if (typeof c.stipendioMensile !== 'number' || c.stipendioMensile <= 0) return null;
+
+  const costi = await costiGeneraliStorage.readAll();
+  const hasPregressa = costi.some(
+    x => x.categoria === 'stipendi' && x.collaboratoreId === c.id
+  );
+  if (hasPregressa) return null;
+
+  const today = new Date();
+  const periodo = `${today.getUTCFullYear()}-${String(today.getUTCMonth() + 1).padStart(2, '0')}`;
+  const todayStr = today.toISOString().slice(0, 10);
+  const meseLabel = meseItaliano(periodo);
+  const costo: CostoGenerale = {
+    id: randomUUID(),
+    categoria: 'stipendi',
+    fornitore: `${c.nome} ${c.cognome}`.trim(),
+    descrizione: `Busta paga ${meseLabel}`,
+    data: todayStr,
+    dataScadenza: todayStr,
+    importo: c.stipendioMensile,
+    pagato: false,
+    collaboratoreId: c.id,
+    periodo,
+  };
+  await costiGeneraliStorage.create(costo);
+  logger.info('Bootstrap busta paga dipendente', { collaboratoreId: c.id, periodo });
+  return costo;
+}
+
+/**
  * Schedula l'auto-generazione periodica. Esegue immediatamente all'avvio
  * (catch-up) e poi ogni `intervalHours` ore. Interval unref-ato per non
  * tenere vivo il process.

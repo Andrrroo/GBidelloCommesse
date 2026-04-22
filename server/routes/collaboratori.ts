@@ -4,6 +4,7 @@ import { collaboratoriStorage, projectResourcesStorage } from '../storage.js';
 import { insertCollaboratoreSchema, updateCollaboratoreSchema } from '@shared/schema';
 import { logActivity } from '../lib/activity-logger.js';
 import { logger } from '../lib/logger.js';
+import { ensurePayrollBootstrap } from '../lib/payroll-auto-gen.js';
 
 export const collaboratoriRouter = Router();
 
@@ -50,6 +51,12 @@ collaboratoriRouter.post('/api/collaboratori', async (req, res) => {
       details: `${result.data.nome} ${result.data.cognome || ''} · ${result.data.ruolo || ''}`.trim(),
     });
 
+    // Se creato già come dipendente con stipendio: crea la prima busta paga
+    // (bootstrap). Il cron giornaliero rigenererà ogni mese da qui in poi.
+    await ensurePayrollBootstrap(collaboratore.id).catch((err) =>
+      logger.error('Payroll bootstrap failed (create)', { err, collaboratoreId: collaboratore.id })
+    );
+
     res.status(201).json(collaboratore);
   } catch (error) { logger.error('Request failed', { err: error, path: req.path, method: req.method }); res.status(500).json({ error: 'Failed to create collaboratore' }); }
 });
@@ -66,6 +73,14 @@ collaboratoriRouter.put('/api/collaboratori/:id', async (req, res) => {
       entityId: updated.id,
       details: `${updated.nome} ${updated.cognome || ''} (campi: ${Object.keys(result.data).join(', ')})`.trim(),
     });
+
+    // Se l'update ha portato il dipendente in stato "attivo + isDipendente +
+    // stipendio configurato" e non ha buste paga pregresse, bootstrap.
+    // Idempotente: se ne esiste già una, non crea nulla.
+    await ensurePayrollBootstrap(updated.id).catch((err) =>
+      logger.error('Payroll bootstrap failed (update)', { err, collaboratoreId: updated.id })
+    );
+
     res.json(updated);
   } catch (error) { logger.error('Request failed', { err: error, path: req.path, method: req.method }); res.status(500).json({ error: 'Failed to update collaboratore' }); }
 });

@@ -60,12 +60,6 @@ router.use('/api/collaboratori', (req: Request, res: Response, next: NextFunctio
 // → solo admin.
 router.use('/api/cash-flow', requireAdmin);
 
-// Payroll: anteprima dipendenti + generazione batch buste paga mensile.
-// Espongono nome/stipendio di tutti i dipendenti e permettono di creare
-// costi generali di categoria stipendi → admin-only.
-router.use('/api/costi-generali/anteprima-stipendi', requireAdmin);
-router.use('/api/costi-generali/genera-stipendi-mese', requireAdmin);
-
 // Anagrafica clienti: scrittura solo admin (coerente con tab "Anagrafica"
 // admin-only UI). GET resta aperto perché usato da progetti e dashboard.
 router.use('/api/clients', (req: Request, res: Response, next: NextFunction) => {

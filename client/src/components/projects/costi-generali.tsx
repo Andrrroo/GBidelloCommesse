@@ -13,46 +13,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, invalidateDashboard } from "@/lib/queryClient";
-import { Plus, Pencil, Trash2, Building, Check, Clock, Euro, Download, ArrowUp, ArrowDown, X, Users, CheckCircle2 } from "lucide-react";
+import { Plus, Pencil, Trash2, Building, Check, Clock, Euro, Download, ArrowUp, ArrowDown, X, Users } from "lucide-react";
 import type { CostoGenerale, Collaboratore } from "@shared/schema";
 import { formatCurrency, formatCurrencyFromCents, formatDate, toCents, fromCents } from "@/lib/financial-utils";
 import { usePagination } from "@/hooks/usePagination";
 import { TablePagination } from "@/components/ui/table-pagination";
 import { useAuth } from "@/hooks/useAuth";
-
-// Costruisce la lista degli ultimi 12 mesi + prossimi 3 per il selettore (YYYY-MM).
-function buildMonthOptions(): Array<{ value: string; label: string }> {
-  const MESI_IT = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
-  const now = new Date();
-  const opts: Array<{ value: string; label: string }> = [];
-  for (let offset = 3; offset >= -12; offset--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - offset, 1);
-    const y = d.getFullYear();
-    const m = d.getMonth() + 1;
-    opts.push({ value: `${y}-${String(m).padStart(2, '0')}`, label: `${MESI_IT[m - 1]} ${y}` });
-  }
-  return opts;
-}
-
-function currentPeriodo(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-}
-
-interface AnteprimaStipendiResponse {
-  periodo: string;
-  meseLabel: string;
-  dipendenti: Array<{
-    id: string;
-    nome: string;
-    cognome: string;
-    stipendioMensile: number;
-    alreadyGenerated: boolean;
-    costoId: string | null;
-  }>;
-  daCreare: number;
-  totaleDaCreare: number;
-}
 
 const CATEGORIE = {
   noleggio_auto: "Noleggio Auto",
@@ -87,11 +53,6 @@ export default function CostiGenerali() {
   const [filterFornitore, setFilterFornitore] = useState<string>("all");
   const [sortBy, setSortBy] = useState<'data' | 'importo'>('data');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
-
-  // Generazione buste paga del mese
-  const [stipendiDialogOpen, setStipendiDialogOpen] = useState(false);
-  const [selectedPeriodo, setSelectedPeriodo] = useState<string>(currentPeriodo());
-  const monthOptions = buildMonthOptions();
 
   // Categorie effettivamente visibili all'utente corrente (stipendi solo admin).
   const admin = isAdmin();
@@ -180,38 +141,6 @@ export default function CostiGenerali() {
     },
     onError: () => {
       toast({ title: "Errore", description: "Errore durante l'eliminazione", variant: "destructive" });
-    }
-  });
-
-  // Anteprima buste paga del mese (solo quando il dialog è aperto)
-  const { data: anteprima, isLoading: isLoadingAnteprima } = useQuery<AnteprimaStipendiResponse>({
-    queryKey: ["/api/costi-generali/anteprima-stipendi", selectedPeriodo],
-    queryFn: async () => {
-      const response = await apiRequest("GET", `/api/costi-generali/anteprima-stipendi/${selectedPeriodo}`);
-      if (!response.ok) throw new Error("Failed to load anteprima");
-      return response.json();
-    },
-    enabled: stipendiDialogOpen && isAdmin(),
-  });
-
-  const generaStipendiMutation = useMutation({
-    mutationFn: async (periodo: string) => {
-      const response = await apiRequest("POST", "/api/costi-generali/genera-stipendi-mese", { periodo });
-      if (!response.ok) throw new Error("Failed to generate");
-      return response.json() as Promise<{ periodo: string; meseLabel: string; created: any[]; skipped: any[] }>;
-    },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/costi-generali"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/costi-generali/anteprima-stipendi", selectedPeriodo] });
-      invalidateDashboard();
-      toast({
-        title: "Buste paga generate",
-        description: `${data.meseLabel}: ${data.created.length} create, ${data.skipped.length} saltate`,
-      });
-      setStipendiDialogOpen(false);
-    },
-    onError: () => {
-      toast({ title: "Errore", description: "Errore durante la generazione buste paga", variant: "destructive" });
     }
   });
 
@@ -416,18 +345,10 @@ export default function CostiGenerali() {
             </Button>
           )}
         </div>
-        <div className="flex gap-2">
-          {isAdmin() && (
-            <Button variant="outline" onClick={() => setStipendiDialogOpen(true)}>
-              <Users className="h-4 w-4 mr-1" />
-              Genera Buste Paga
-            </Button>
-          )}
-          <Button onClick={() => setIsDialogOpen(true)}>
-            <Plus className="h-4 w-4 mr-1" />
-            Nuovo Costo Generale
-          </Button>
-        </div>
+        <Button onClick={() => setIsDialogOpen(true)}>
+          <Plus className="h-4 w-4 mr-1" />
+          Nuovo Costo Generale
+        </Button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -801,102 +722,6 @@ export default function CostiGenerali() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Dialog: generazione buste paga del mese */}
-      <Dialog open={stipendiDialogOpen} onOpenChange={setStipendiDialogOpen}>
-        <DialogContent className="max-h-[90vh] flex flex-col sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Users className="h-5 w-5" />
-              Genera Buste Paga del Mese
-            </DialogTitle>
-          </DialogHeader>
-
-          <div className="space-y-4 overflow-y-auto px-1 py-1 flex-1">
-            <div className="space-y-2">
-              <Label htmlFor="periodo-stipendi">Mese di riferimento</Label>
-              <Select value={selectedPeriodo} onValueChange={setSelectedPeriodo}>
-                <SelectTrigger id="periodo-stipendi">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {monthOptions.map(opt => (
-                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {isLoadingAnteprima ? (
-              <div className="animate-pulse space-y-2">
-                <div className="h-10 bg-gray-200 rounded-md" />
-                <div className="h-10 bg-gray-200 rounded-md" />
-              </div>
-            ) : !anteprima || anteprima.dipendenti.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-gray-300 p-6 text-center text-sm text-gray-500">
-                Nessun dipendente configurato.<br />
-                Vai in <span className="font-medium">Sistema → Collaboratori</span>, attiva il flag <span className="font-medium">Dipendente</span> e imposta lo stipendio mensile.
-              </div>
-            ) : (
-              <>
-                <div className="rounded-lg border border-gray-200">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Dipendente</TableHead>
-                        <TableHead className="text-right">Stipendio</TableHead>
-                        <TableHead className="text-center">Stato</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {anteprima.dipendenti.map(d => (
-                        <TableRow key={d.id}>
-                          <TableCell className="font-medium">{d.nome} {d.cognome}</TableCell>
-                          <TableCell className="text-right font-semibold">{formatCurrency(d.stipendioMensile)}</TableCell>
-                          <TableCell className="text-center">
-                            {d.alreadyGenerated ? (
-                              <Badge variant="secondary" className="gap-1">
-                                <CheckCircle2 className="h-3 w-3" />
-                                Già generato
-                              </Badge>
-                            ) : (
-                              <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">Da creare</Badge>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-
-                <div className="flex items-center justify-between rounded-lg bg-gray-50 border border-gray-200 p-3 text-sm">
-                  <span className="text-gray-600">Totale da creare</span>
-                  <span className="font-semibold text-lg">{formatCurrency(anteprima.totaleDaCreare)}</span>
-                </div>
-              </>
-            )}
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setStipendiDialogOpen(false)}>
-              Annulla
-            </Button>
-            <Button
-              onClick={() => generaStipendiMutation.mutate(selectedPeriodo)}
-              disabled={
-                generaStipendiMutation.isPending ||
-                !anteprima ||
-                anteprima.daCreare === 0
-              }
-            >
-              {generaStipendiMutation.isPending
-                ? "Generazione in corso..."
-                : anteprima && anteprima.daCreare > 0
-                  ? `Genera ${anteprima.daCreare} ${anteprima.daCreare === 1 ? 'busta paga' : 'buste paga'}`
-                  : "Nessuna da generare"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

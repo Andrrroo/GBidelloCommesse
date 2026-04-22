@@ -14,22 +14,6 @@ function formatEuro(amount: number): string {
   return amount.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' });
 }
 
-const PERIODO_REGEX = /^\d{4}-(0[1-9]|1[0-2])$/;
-const MESI_IT = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
-
-function endOfMonthISO(periodo: string): string {
-  const [y, m] = periodo.split('-').map(Number);
-  // Day 0 del mese successivo = ultimo giorno del mese corrente (UTC per
-  // evitare slittamenti di fuso orario sulla parte di data).
-  const lastDay = new Date(Date.UTC(y, m, 0));
-  return lastDay.toISOString().slice(0, 10);
-}
-
-function meseItaliano(periodo: string): string {
-  const [y, m] = periodo.split('-').map(Number);
-  return `${MESI_IT[m - 1]} ${y}`;
-}
-
 // I costi "stipendi" sono informazione di payroll: non devono essere visibili
 // né modificabili da non-admin. Filtro/guard applicati a tutte le route REST
 // su /api/costi-generali oltre al sanitize già fatto su /api/collaboratori.
@@ -160,110 +144,10 @@ costsRouter.post('/api/costi-generali', async (req, res) => {
   } catch (error) { logger.error('Request failed', { err: error, path: req.path, method: req.method }); res.status(500).json({ error: 'Failed to create costo' }); }
 });
 
-// --- Generazione automatica buste paga del mese ---
-//
-// GET  /api/costi-generali/anteprima-stipendi/:periodo  → lista dipendenti con
-//      indicazione "già generato" per il mese, usata dal dialog prima di confermare.
-// POST /api/costi-generali/genera-stipendi-mese         → materializza un
-//      CostoGenerale "stipendi" per ogni dipendente attivo non ancora presente
-//      per il periodo. Idempotente: se già esistono, vengono skippati.
-
-costsRouter.get('/api/costi-generali/anteprima-stipendi/:periodo', async (req, res) => {
-  try {
-    const periodo = req.params.periodo;
-    if (!PERIODO_REGEX.test(periodo)) return res.status(400).json({ error: 'Periodo non valido (formato YYYY-MM)' });
-
-    const [collaboratori, costi] = await Promise.all([
-      collaboratoriStorage.readAll(),
-      costiGeneraliStorage.readAll(),
-    ]);
-    const giaGenerati = new Map<string, string>(); // collaboratoreId → costoId
-    for (const c of costi) {
-      if (c.categoria === 'stipendi' && c.periodo === periodo && c.collaboratoreId) {
-        giaGenerati.set(c.collaboratoreId, c.id);
-      }
-    }
-    const dipendenti = collaboratori
-      .filter(c => c.active && c.isDipendente && typeof c.stipendioMensile === 'number' && c.stipendioMensile > 0)
-      .map(c => ({
-        id: c.id,
-        nome: c.nome,
-        cognome: c.cognome,
-        stipendioMensile: c.stipendioMensile!,
-        alreadyGenerated: giaGenerati.has(c.id),
-        costoId: giaGenerati.get(c.id) ?? null,
-      }));
-
-    const daCreare = dipendenti.filter(d => !d.alreadyGenerated).length;
-    const totaleDaCreare = dipendenti
-      .filter(d => !d.alreadyGenerated)
-      .reduce((sum, d) => sum + d.stipendioMensile, 0);
-
-    res.json({ periodo, meseLabel: meseItaliano(periodo), dipendenti, daCreare, totaleDaCreare });
-  } catch (error) { logger.error('Request failed', { err: error, path: req.path, method: req.method }); res.status(500).json({ error: 'Failed to load anteprima stipendi' }); }
-});
-
-costsRouter.post('/api/costi-generali/genera-stipendi-mese', async (req, res) => {
-  try {
-    const periodo = typeof req.body?.periodo === 'string' ? req.body.periodo : '';
-    if (!PERIODO_REGEX.test(periodo)) return res.status(400).json({ error: 'Periodo non valido (formato YYYY-MM)' });
-
-    const [collaboratori, costi] = await Promise.all([
-      collaboratoriStorage.readAll(),
-      costiGeneraliStorage.readAll(),
-    ]);
-    const giaGenerati = new Set<string>();
-    for (const c of costi) {
-      if (c.categoria === 'stipendi' && c.periodo === periodo && c.collaboratoreId) {
-        giaGenerati.add(c.collaboratoreId);
-      }
-    }
-
-    const dataRiferimento = endOfMonthISO(periodo);
-    const meseLabel = meseItaliano(periodo);
-    const created: Array<{ id: string; collaboratoreId: string; fornitore: string; importo: number }> = [];
-    const skipped: Array<{ collaboratoreId: string; motivo: string }> = [];
-
-    for (const c of collaboratori) {
-      if (!c.active) continue;
-      if (!c.isDipendente) continue;
-      if (typeof c.stipendioMensile !== 'number' || c.stipendioMensile <= 0) {
-        skipped.push({ collaboratoreId: c.id, motivo: 'stipendioMensile mancante' });
-        continue;
-      }
-      if (giaGenerati.has(c.id)) {
-        skipped.push({ collaboratoreId: c.id, motivo: 'già generato' });
-        continue;
-      }
-      const costo = {
-        id: randomUUID(),
-        categoria: 'stipendi' as const,
-        fornitore: `${c.nome} ${c.cognome}`.trim(),
-        descrizione: `Busta paga ${meseLabel}`,
-        data: dataRiferimento,
-        // dataScadenza = ultimo giorno del mese: fa comparire la busta paga
-        // nel widget scadenze finché non è marcata pagata (filtro in
-        // server/routes/dashboard.ts già esclude stipendi per i non-admin).
-        dataScadenza: dataRiferimento,
-        importo: c.stipendioMensile,
-        pagato: false,
-        collaboratoreId: c.id,
-        periodo,
-      };
-      await costiGeneraliStorage.create(costo);
-      created.push({ id: costo.id, collaboratoreId: c.id, fornitore: costo.fornitore, importo: costo.importo });
-    }
-
-    await logActivity(req, {
-      action: 'create',
-      entityType: 'costo_generale',
-      entityId: `batch-stipendi-${periodo}`,
-      details: `Generazione stipendi ${meseLabel}: ${created.length} creati, ${skipped.length} skippati`,
-    });
-
-    res.status(201).json({ periodo, meseLabel, created, skipped });
-  } catch (error) { logger.error('Request failed', { err: error, path: req.path, method: req.method }); res.status(500).json({ error: 'Failed to generate stipendi' }); }
-});
+// Generazione buste paga: non c'è più un endpoint batch manuale. Il bootstrap
+// parte da `ensurePayrollBootstrap` in `lib/payroll-auto-gen.ts` quando il
+// Collaboratore viene salvato dipendente+stipendio; il cron `runPayrollAutoGen`
+// crea ricorsivamente le buste paga dei mesi successivi.
 
 async function handleUpdateCostoGenerale(req: import('express').Request, res: import('express').Response) {
   try {
