@@ -9,6 +9,7 @@ import { logger } from './lib/logger.js';
 import { performBackup, scheduleBackup } from './lib/backup.js';
 import { runMigrations } from './lib/migrations.js';
 import { purgeActivityLogs, scheduleActivityRetention } from './lib/activity-retention.js';
+import { runPayrollAutoGen, schedulePayrollAutoGen } from './lib/payroll-auto-gen.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
@@ -211,6 +212,12 @@ async function start() {
     // o eccedenti 10k; poi schedule ogni 24h.
     await purgeActivityLogs().catch((e) => logger.error('Activity retention failed', { err: e }));
     scheduleActivityRetention(24);
+
+    // Auto-generazione buste paga ricorrenti: catch-up all'avvio (crea le
+    // buste paga mancanti fino a oggi per ogni dipendente con almeno un
+    // record pregresso), poi check ogni 24h.
+    await runPayrollAutoGen().catch((e) => logger.error('Payroll auto-gen failed', { err: e }));
+    schedulePayrollAutoGen(24);
   });
 
   httpServer!.keepAliveTimeout = 60_000;

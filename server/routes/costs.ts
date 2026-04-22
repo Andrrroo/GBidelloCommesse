@@ -241,6 +241,10 @@ costsRouter.post('/api/costi-generali/genera-stipendi-mese', async (req, res) =>
         fornitore: `${c.nome} ${c.cognome}`.trim(),
         descrizione: `Busta paga ${meseLabel}`,
         data: dataRiferimento,
+        // dataScadenza = ultimo giorno del mese: fa comparire la busta paga
+        // nel widget scadenze finché non è marcata pagata (filtro in
+        // server/routes/dashboard.ts già esclude stipendi per i non-admin).
+        dataScadenza: dataRiferimento,
         importo: c.stipendioMensile,
         pagato: false,
         collaboratoreId: c.id,
