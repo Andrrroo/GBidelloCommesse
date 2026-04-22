@@ -377,6 +377,7 @@ export const insertCostoGeneraleSchema = z.object({
     "assicurazioni",
     "commercialista",
     "stipendi",
+    "abbonamento",
     "altro"
   ]),
   fornitore: z.string().min(1, "Il fornitore è obbligatorio"),
@@ -392,6 +393,13 @@ export const insertCostoGeneraleSchema = z.object({
   // batch mensile e per la dashboard per-fornitore.
   collaboratoreId: z.string().optional(),
   periodo: z.string().regex(/^\d{4}-\d{2}$/, "Formato periodo: YYYY-MM").optional(),
+  // Ricorrenza per categoria "abbonamento" (e in generale per costi
+  // ripetitivi): `periodicita` definisce ogni quanti mesi rigenerare il
+  // record, `ricorrenzaId` è un UUID condiviso tra tutte le occorrenze
+  // della stessa ricorrenza. Se periodicita è assente l'auto-gen non parte
+  // (ricorrenza interrotta).
+  periodicita: z.enum(["mensile", "bimestrale", "trimestrale", "semestrale", "annuale"]).optional(),
+  ricorrenzaId: z.string().optional(),
   note: z.string().optional(),
 });
 

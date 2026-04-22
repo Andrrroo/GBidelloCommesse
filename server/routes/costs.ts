@@ -130,6 +130,15 @@ costsRouter.post('/api/costi-generali', async (req, res) => {
       data.fornitore = `${collab.nome} ${collab.cognome}`.trim();
     }
 
+    // Abbonamenti ricorrenti: al primo salvataggio genero un `ricorrenzaId`
+    // (UUID) che lega tutte le occorrenze future prodotte dall'auto-gen.
+    // Se il client passa già un ricorrenzaId, rispetto il suo (utile se un
+    // client smart volesse "agganciare" nuove occorrenze a una ricorrenza
+    // esistente — non usato oggi dalla UI).
+    if (data.categoria === 'abbonamento' && data.periodicita && !data.ricorrenzaId) {
+      data.ricorrenzaId = randomUUID();
+    }
+
     const costo = { id: randomUUID(), ...data };
     await costiGeneraliStorage.create(costo);
 

@@ -10,6 +10,7 @@ import { performBackup, scheduleBackup } from './lib/backup.js';
 import { runMigrations } from './lib/migrations.js';
 import { purgeActivityLogs, scheduleActivityRetention } from './lib/activity-retention.js';
 import { runPayrollAutoGen, schedulePayrollAutoGen } from './lib/payroll-auto-gen.js';
+import { runSubscriptionAutoGen, scheduleSubscriptionAutoGen } from './lib/subscription-auto-gen.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
@@ -218,6 +219,12 @@ async function start() {
     // record pregresso), poi check ogni 24h.
     await runPayrollAutoGen().catch((e) => logger.error('Payroll auto-gen failed', { err: e }));
     schedulePayrollAutoGen(24);
+
+    // Auto-generazione abbonamenti / servizi ricorrenti (categoria
+    // "abbonamento" con periodicita + ricorrenzaId). Stesso pattern del
+    // payroll: catch-up all'avvio + check ogni 24h.
+    await runSubscriptionAutoGen().catch((e) => logger.error('Subscription auto-gen failed', { err: e }));
+    scheduleSubscriptionAutoGen(24);
   });
 
   httpServer!.keepAliveTimeout = 60_000;

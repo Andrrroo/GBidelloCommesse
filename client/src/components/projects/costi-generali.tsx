@@ -13,7 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, invalidateDashboard } from "@/lib/queryClient";
-import { Plus, Pencil, Trash2, Building, Check, Clock, Euro, Download, ArrowUp, ArrowDown, X, Users } from "lucide-react";
+import { Plus, Pencil, Trash2, Building, Check, Clock, Euro, Download, ArrowUp, ArrowDown, X, Users, RefreshCcw } from "lucide-react";
 import type { CostoGenerale, Collaboratore } from "@shared/schema";
 import { formatCurrency, formatCurrencyFromCents, formatDate, toCents, fromCents } from "@/lib/financial-utils";
 import { usePagination } from "@/hooks/usePagination";
@@ -31,6 +31,7 @@ const CATEGORIE = {
   assicurazioni: "Assicurazioni",
   commercialista: "Commercialista",
   stipendi: "Stipendi/Buste Paga",
+  abbonamento: "Abbonamenti/Servizi",
   altro: "Altro"
 };
 
@@ -39,6 +40,16 @@ const CATEGORIE = {
 // già filtra le righe stipendi dalla lista per non-admin, ma questo evita
 // che rimangano voci "fantasma" se il server dovesse cambiare risposta).
 const CATEGORIE_ADMIN_ONLY: Array<keyof typeof CATEGORIE> = ["stipendi"];
+
+// Opzioni periodicità per categoria "abbonamento".
+const PERIODICITA_OPTIONS: Array<{ value: "mensile" | "bimestrale" | "trimestrale" | "semestrale" | "annuale"; label: string }> = [
+  { value: "mensile", label: "Mensile" },
+  { value: "bimestrale", label: "Bimestrale" },
+  { value: "trimestrale", label: "Trimestrale" },
+  { value: "semestrale", label: "Semestrale" },
+  { value: "annuale", label: "Annuale" },
+];
+type Periodicita = (typeof PERIODICITA_OPTIONS)[number]["value"];
 
 export default function CostiGenerali() {
   const tableTopRef = useRef<HTMLDivElement>(null);
@@ -72,6 +83,7 @@ export default function CostiGenerali() {
     allegato: "",
     note: "",
     collaboratoreId: "" as string,
+    periodicita: "" as Periodicita | "",
   });
 
   // Collaboratori dipendenti per il Select "Stipendi" (solo attivi + flag dipendente).
@@ -157,6 +169,7 @@ export default function CostiGenerali() {
       allegato: "",
       note: "",
       collaboratoreId: "",
+      periodicita: "",
     });
     setEditingCosto(null);
     setIsDialogOpen(false);
@@ -176,6 +189,7 @@ export default function CostiGenerali() {
       allegato: costo.allegato || "",
       note: costo.note || "",
       collaboratoreId: costo.collaboratoreId || "",
+      periodicita: costo.periodicita || "",
     });
     setIsDialogOpen(true);
   };
@@ -194,6 +208,17 @@ export default function CostiGenerali() {
       return;
     }
 
+    // Per gli abbonamenti la periodicità è obbligatoria (senza periodicità
+    // il cron non rigenera → non è una vera ricorrenza).
+    if (formData.categoria === "abbonamento" && !formData.periodicita) {
+      toast({
+        title: "Periodicità non selezionata",
+        description: "Seleziona ogni quanto si rinnova l'abbonamento.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     const cleanData: Record<string, any> = {
       ...formData,
       importo: parseFloat(String(formData.importo)) || 0,
@@ -206,6 +231,9 @@ export default function CostiGenerali() {
     // collaboratoreId è valorizzato solo per categoria "stipendi". Se vuoto
     // non va inviato (il campo è opzionale nello schema).
     if (!cleanData.collaboratoreId) delete cleanData.collaboratoreId;
+    // periodicita è valorizzata solo per categoria "abbonamento". Se vuota
+    // (es. categoria diversa) non va inviata.
+    if (!cleanData.periodicita) delete cleanData.periodicita;
     const submitData = cleanData;
     if (editingCosto) {
       updateMutation.mutate({ id: editingCosto.id, data: submitData as any });
@@ -409,8 +437,14 @@ export default function CostiGenerali() {
                   {pagination.pageItems.map((costo) => (
                     <TableRow key={costo.id}>
                       <TableCell>
-                        <div className="flex items-center gap-1">
-                          {CATEGORIE[costo.categoria]}
+                        <div className="flex items-center gap-1.5">
+                          {costo.categoria === "abbonamento" && (
+                            <RefreshCcw className="h-3.5 w-3.5 text-indigo-600" aria-label="Ricorrente" />
+                          )}
+                          <span>{CATEGORIE[costo.categoria]}</span>
+                          {costo.categoria === "abbonamento" && costo.periodicita && (
+                            <span className="text-xs text-indigo-600/80">· {costo.periodicita}</span>
+                          )}
                         </div>
                       </TableCell>
                       <TableCell>
@@ -490,10 +524,15 @@ export default function CostiGenerali() {
                       // da un tipo all'altro resettiamo il payee + collaboratoreId
                       // per evitare mismatch (es. "ENEL" come nome dipendente).
                       const changingFromOrToStipendi = (prev.categoria === "stipendi") !== (next === "stipendi");
+                      // La periodicità ha senso solo per abbonamenti: quando
+                      // si esce dalla categoria la reset, quando si entra
+                      // resta vuota (verrà forzata dalla validazione submit).
+                      const leavingAbbonamento = prev.categoria === "abbonamento" && next !== "abbonamento";
                       return {
                         ...prev,
                         categoria: next,
                         ...(changingFromOrToStipendi ? { fornitore: "", collaboratoreId: "" } : {}),
+                        ...(leavingAbbonamento ? { periodicita: "" as Periodicita | "" } : {}),
                       };
                     });
                   }}
@@ -584,6 +623,35 @@ export default function CostiGenerali() {
                 )}
               </div>
             </div>
+
+            {formData.categoria === "abbonamento" && (
+              <div className="rounded-lg border-2 border-indigo-200 bg-indigo-50/60 p-3 space-y-2">
+                <Label htmlFor="periodicita" className="font-semibold text-indigo-900">
+                  Periodicità rinnovo <span className="text-red-500">*</span>
+                </Label>
+                <p className="text-xs text-indigo-700/80">
+                  Ogni quanto il sistema crea automaticamente la prossima scadenza.
+                </p>
+                <Select
+                  value={formData.periodicita}
+                  onValueChange={(value) => setFormData(prev => ({ ...prev, periodicita: value as Periodicita }))}
+                >
+                  <SelectTrigger id="periodicita">
+                    <SelectValue placeholder="Seleziona periodicità..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PERIODICITA_OPTIONS.map(opt => (
+                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {editingCosto && editingCosto.ricorrenzaId && (
+                  <p className="text-xs text-gray-500">
+                    Per interrompere la ricorrenza, rimuovi la periodicità (non disponibile qui) oppure elimina questo record dall'elenco.
+                  </p>
+                )}
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="descrizione">Descrizione *</Label>

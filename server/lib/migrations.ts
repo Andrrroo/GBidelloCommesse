@@ -13,7 +13,7 @@ const META_FILE = path.join(DATA_DIR, '_schema-version.json');
 // VERSIONE ATTUALE DELLO SCHEMA
 // Incrementare di 1 ogni volta che si introduce una migrazione in `MIGRATIONS`.
 // ----------------------------------------------------------------------------
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 /**
  * Ogni migrazione riceve il percorso di `data/` e fa in-place i cambiamenti
@@ -60,6 +60,9 @@ const MIGRATIONS: Record<number, MigrationFn> = {
     }
   },
 
+  // v5 — aggiunta categoria "abbonamento" + campi periodicita/ricorrenzaId
+  // a CostoGenerale. Tutti opzionali, nessuna operazione sui dati esistenti.
+  //
   // v4 — aggiunti isDipendente/stipendioMensile a Collaboratore e
   // collaboratoreId/periodo a CostoGenerale. Tutti opzionali → nessuna
   // operazione sui dati esistenti, il bump serve solo a marcare la versione.
