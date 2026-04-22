@@ -79,7 +79,9 @@ dashboardRouter.get('/api/fatture-in-scadenza', async (req, res) => {
 
     const costiGenerali = await costiGeneraliStorage.readAll();
     const costiGeneraliInScadenza = costiGenerali
+      // Stipendi esclusi per i non-admin (payroll privato).
       .filter(c => !c.pagato && c.dataScadenza && new Date(c.dataScadenza) <= tra30giorni)
+      .filter(c => isAdmin || c.categoria !== 'stipendi')
       .map(c => ({ ...c, tipo: 'costo_generale' as const }));
 
     const tutteLeScadenze = [

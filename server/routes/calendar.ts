@@ -40,7 +40,7 @@ function joinDescription(...parts: (string | undefined)[]): string {
   return parts.filter(p => p && p.trim().length > 0).join('\n\n');
 }
 
-async function buildEvents(): Promise<EventAttributes[]> {
+async function buildEvents(isAdmin: boolean): Promise<EventAttributes[]> {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - CALENDAR_HISTORY_DAYS);
 
@@ -144,9 +144,11 @@ async function buildEvents(): Promise<EventAttributes[]> {
     pushEvent('fattura-consulente', f.id, f.dataScadenzaPagamento, title, f.descrizione || '');
   }
 
-  // Costi generali con dataScadenza non pagati
+  // Costi generali con dataScadenza non pagati. Gli stipendi sono
+  // informazione di payroll: niente feed per i non-admin.
   for (const c of costiGenerali) {
     if (c.pagato || !c.dataScadenza) continue;
+    if (!isAdmin && c.categoria === 'stipendi') continue;
     const title = `Costo generale · ${c.categoria} · ${c.fornitore}`;
     pushEvent('costo-generale', c.id, c.dataScadenza, title, c.descrizione || '');
   }
@@ -178,7 +180,7 @@ calendarRouter.get('/api/calendar/feed.ics', async (req, res) => {
       return res.status(404).end();
     }
 
-    const events = await buildEvents();
+    const events = await buildEvents(user.role === 'amministratore');
     const { error, value } = createEvents(events, {
       productId: 'gbidello-commesse/ics',
       calName: `GB Commesse — ${user.nome}`,

@@ -13,11 +13,46 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, invalidateDashboard } from "@/lib/queryClient";
-import { Plus, Pencil, Trash2, Building, Check, Clock, Euro, Download, ArrowUp, ArrowDown, X } from "lucide-react";
-import type { CostoGenerale } from "@shared/schema";
+import { Plus, Pencil, Trash2, Building, Check, Clock, Euro, Download, ArrowUp, ArrowDown, X, Users, CheckCircle2 } from "lucide-react";
+import type { CostoGenerale, Collaboratore } from "@shared/schema";
 import { formatCurrency, formatCurrencyFromCents, formatDate, toCents, fromCents } from "@/lib/financial-utils";
 import { usePagination } from "@/hooks/usePagination";
 import { TablePagination } from "@/components/ui/table-pagination";
+import { useAuth } from "@/hooks/useAuth";
+
+// Costruisce la lista degli ultimi 12 mesi + prossimi 3 per il selettore (YYYY-MM).
+function buildMonthOptions(): Array<{ value: string; label: string }> {
+  const MESI_IT = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
+  const now = new Date();
+  const opts: Array<{ value: string; label: string }> = [];
+  for (let offset = 3; offset >= -12; offset--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - offset, 1);
+    const y = d.getFullYear();
+    const m = d.getMonth() + 1;
+    opts.push({ value: `${y}-${String(m).padStart(2, '0')}`, label: `${MESI_IT[m - 1]} ${y}` });
+  }
+  return opts;
+}
+
+function currentPeriodo(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+interface AnteprimaStipendiResponse {
+  periodo: string;
+  meseLabel: string;
+  dipendenti: Array<{
+    id: string;
+    nome: string;
+    cognome: string;
+    stipendioMensile: number;
+    alreadyGenerated: boolean;
+    costoId: string | null;
+  }>;
+  daCreare: number;
+  totaleDaCreare: number;
+}
 
 const CATEGORIE = {
   noleggio_auto: "Noleggio Auto",
@@ -29,13 +64,21 @@ const CATEGORIE = {
   multe: "Multe",
   assicurazioni: "Assicurazioni",
   commercialista: "Commercialista",
+  stipendi: "Stipendi/Buste Paga",
   altro: "Altro"
 };
+
+// Categoria "stipendi" è payroll sensibile e va mostrata solo agli admin:
+// nei dropdown (creazione + filtri) e come label nelle righe (il server
+// già filtra le righe stipendi dalla lista per non-admin, ma questo evita
+// che rimangano voci "fantasma" se il server dovesse cambiare risposta).
+const CATEGORIE_ADMIN_ONLY: Array<keyof typeof CATEGORIE> = ["stipendi"];
 
 export default function CostiGenerali() {
   const tableTopRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { isAdmin } = useAuth();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingCosto, setEditingCosto] = useState<CostoGenerale | null>(null);
   const [costoIdToDelete, setCostoIdToDelete] = useState<string | null>(null);
@@ -44,6 +87,17 @@ export default function CostiGenerali() {
   const [filterFornitore, setFilterFornitore] = useState<string>("all");
   const [sortBy, setSortBy] = useState<'data' | 'importo'>('data');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+
+  // Generazione buste paga del mese
+  const [stipendiDialogOpen, setStipendiDialogOpen] = useState(false);
+  const [selectedPeriodo, setSelectedPeriodo] = useState<string>(currentPeriodo());
+  const monthOptions = buildMonthOptions();
+
+  // Categorie effettivamente visibili all'utente corrente (stipendi solo admin).
+  const admin = isAdmin();
+  const visibleCategorie = Object.entries(CATEGORIE).filter(
+    ([key]) => admin || !CATEGORIE_ADMIN_ONLY.includes(key as keyof typeof CATEGORIE)
+  );
 
   const [formData, setFormData] = useState({
     categoria: "altro" as keyof typeof CATEGORIE,
@@ -55,8 +109,21 @@ export default function CostiGenerali() {
     pagato: false,
     dataPagamento: "",
     allegato: "",
-    note: ""
+    note: "",
+    collaboratoreId: "" as string,
   });
+
+  // Collaboratori dipendenti per il Select "Stipendi" (solo attivi + flag dipendente).
+  // stipendioMensile è presente solo per admin (sanitize lato server).
+  const { data: collaboratori = [] } = useQuery<Collaboratore[]>({
+    queryKey: ["/api/collaboratori"],
+    queryFn: async () => {
+      const response = await apiRequest("GET", "/api/collaboratori");
+      if (!response.ok) throw new Error("Failed to fetch collaboratori");
+      return response.json();
+    },
+  });
+  const dipendentiAttivi = collaboratori.filter(c => c.active && c.isDipendente);
 
   const { data: costi = [], isLoading } = useQuery<CostoGenerale[]>({
     queryKey: ["/api/costi-generali"],
@@ -116,6 +183,38 @@ export default function CostiGenerali() {
     }
   });
 
+  // Anteprima buste paga del mese (solo quando il dialog è aperto)
+  const { data: anteprima, isLoading: isLoadingAnteprima } = useQuery<AnteprimaStipendiResponse>({
+    queryKey: ["/api/costi-generali/anteprima-stipendi", selectedPeriodo],
+    queryFn: async () => {
+      const response = await apiRequest("GET", `/api/costi-generali/anteprima-stipendi/${selectedPeriodo}`);
+      if (!response.ok) throw new Error("Failed to load anteprima");
+      return response.json();
+    },
+    enabled: stipendiDialogOpen && isAdmin(),
+  });
+
+  const generaStipendiMutation = useMutation({
+    mutationFn: async (periodo: string) => {
+      const response = await apiRequest("POST", "/api/costi-generali/genera-stipendi-mese", { periodo });
+      if (!response.ok) throw new Error("Failed to generate");
+      return response.json() as Promise<{ periodo: string; meseLabel: string; created: any[]; skipped: any[] }>;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/costi-generali"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/costi-generali/anteprima-stipendi", selectedPeriodo] });
+      invalidateDashboard();
+      toast({
+        title: "Buste paga generate",
+        description: `${data.meseLabel}: ${data.created.length} create, ${data.skipped.length} saltate`,
+      });
+      setStipendiDialogOpen(false);
+    },
+    onError: () => {
+      toast({ title: "Errore", description: "Errore durante la generazione buste paga", variant: "destructive" });
+    }
+  });
+
   const resetForm = () => {
     setFormData({
       categoria: "altro",
@@ -127,7 +226,8 @@ export default function CostiGenerali() {
       pagato: false,
       dataPagamento: "",
       allegato: "",
-      note: ""
+      note: "",
+      collaboratoreId: "",
     });
     setEditingCosto(null);
     setIsDialogOpen(false);
@@ -145,13 +245,26 @@ export default function CostiGenerali() {
       pagato: costo.pagato,
       dataPagamento: costo.dataPagamento || "",
       allegato: costo.allegato || "",
-      note: costo.note || ""
+      note: costo.note || "",
+      collaboratoreId: costo.collaboratoreId || "",
     });
     setIsDialogOpen(true);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Per gli stipendi il Select dipendenti è obbligatorio: feedback inline
+    // invece che attendere il 400 del server.
+    if (formData.categoria === "stipendi" && !formData.collaboratoreId) {
+      toast({
+        title: "Dipendente non selezionato",
+        description: "Seleziona un dipendente per registrare la busta paga.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     const cleanData: Record<string, any> = {
       ...formData,
       importo: parseFloat(String(formData.importo)) || 0,
@@ -161,6 +274,9 @@ export default function CostiGenerali() {
     if (!cleanData.dataPagamento) delete cleanData.dataPagamento;
     if (!cleanData.allegato) delete cleanData.allegato;
     if (!cleanData.note) delete cleanData.note;
+    // collaboratoreId è valorizzato solo per categoria "stipendi". Se vuoto
+    // non va inviato (il campo è opzionale nello schema).
+    if (!cleanData.collaboratoreId) delete cleanData.collaboratoreId;
     const submitData = cleanData;
     if (editingCosto) {
       updateMutation.mutate({ id: editingCosto.id, data: submitData as any });
@@ -233,7 +349,7 @@ export default function CostiGenerali() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Tutte le categorie</SelectItem>
-              {Object.entries(CATEGORIE).map(([key, label]) => (
+              {visibleCategorie.map(([key, label]) => (
                 <SelectItem key={key} value={key}>{label}</SelectItem>
               ))}
             </SelectContent>
@@ -300,10 +416,18 @@ export default function CostiGenerali() {
             </Button>
           )}
         </div>
-        <Button onClick={() => setIsDialogOpen(true)}>
-          <Plus className="h-4 w-4 mr-1" />
-          Nuovo Costo Generale
-        </Button>
+        <div className="flex gap-2">
+          {isAdmin() && (
+            <Button variant="outline" onClick={() => setStipendiDialogOpen(true)}>
+              <Users className="h-4 w-4 mr-1" />
+              Genera Buste Paga
+            </Button>
+          )}
+          <Button onClick={() => setIsDialogOpen(true)}>
+            <Plus className="h-4 w-4 mr-1" />
+            Nuovo Costo Generale
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -351,7 +475,7 @@ export default function CostiGenerali() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Categoria</TableHead>
-                    <TableHead>Fornitore</TableHead>
+                    <TableHead>{admin ? "Fornitore / Dipendente" : "Fornitore"}</TableHead>
                     <TableHead>Descrizione</TableHead>
                     <TableHead>Data</TableHead>
                     <TableHead>Scadenza</TableHead>
@@ -368,7 +492,16 @@ export default function CostiGenerali() {
                           {CATEGORIE[costo.categoria]}
                         </div>
                       </TableCell>
-                      <TableCell>{costo.fornitore}</TableCell>
+                      <TableCell>
+                        {costo.categoria === "stipendi" ? (
+                          <span className="inline-flex items-center gap-1.5 text-blue-700">
+                            <Users className="h-3.5 w-3.5" aria-hidden="true" />
+                            {costo.fornitore}
+                          </span>
+                        ) : (
+                          costo.fornitore
+                        )}
+                      </TableCell>
                       <TableCell className="max-w-[200px] truncate">{costo.descrizione}</TableCell>
                       <TableCell>{formatDate(costo.data)}</TableCell>
                       <TableCell>{costo.dataScadenza ? formatDate(costo.dataScadenza) : "-"}</TableCell>
@@ -428,13 +561,27 @@ export default function CostiGenerali() {
                 <Label htmlFor="categoria">Categoria *</Label>
                 <Select
                   value={formData.categoria}
-                  onValueChange={(value) => setFormData(prev => ({ ...prev, categoria: value as keyof typeof CATEGORIE }))}
+                  onValueChange={(value) => {
+                    const next = value as keyof typeof CATEGORIE;
+                    setFormData(prev => {
+                      // Il payee ha regole diverse tra stipendi (select chiuso su
+                      // dipendenti) e fornitori (free text). Quando si passa
+                      // da un tipo all'altro resettiamo il payee + collaboratoreId
+                      // per evitare mismatch (es. "ENEL" come nome dipendente).
+                      const changingFromOrToStipendi = (prev.categoria === "stipendi") !== (next === "stipendi");
+                      return {
+                        ...prev,
+                        categoria: next,
+                        ...(changingFromOrToStipendi ? { fornitore: "", collaboratoreId: "" } : {}),
+                      };
+                    });
+                  }}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Seleziona categoria" />
                   </SelectTrigger>
                   <SelectContent>
-                    {Object.entries(CATEGORIE).map(([key, label]) => (
+                    {visibleCategorie.map(([key, label]) => (
                       <SelectItem key={key} value={key}>{label}</SelectItem>
                     ))}
                   </SelectContent>
@@ -442,23 +589,78 @@ export default function CostiGenerali() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="fornitore">Fornitore *</Label>
-                <Input
-                  id="fornitore"
-                  list="fornitori-costi-generali"
-                  value={formData.fornitore}
-                  onChange={(e) => setFormData(prev => ({ ...prev, fornitore: e.target.value }))}
-                  placeholder="Inizia a scrivere o scegli uno già usato..."
-                  autoComplete="off"
-                  required
-                />
-                {/* Autocomplete nativo: elenco fornitori già presenti nei costi
-                    generali. L'utente può comunque digitarne uno nuovo. */}
-                <datalist id="fornitori-costi-generali">
-                  {Array.from(new Set(costi.map(c => c.fornitore?.trim()).filter(Boolean)))
-                    .sort((a, b) => (a as string).localeCompare(b as string, 'it'))
-                    .map(f => <option key={f} value={f} />)}
-                </datalist>
+                <Label htmlFor="fornitore">
+                  {formData.categoria === "stipendi" ? "Dipendente *" : "Fornitore *"}
+                </Label>
+                {formData.categoria === "stipendi" ? (
+                  // Per gli stipendi: select chiuso sui soli dipendenti attivi.
+                  // Nessun testo libero per evitare errori di battitura e
+                  // per poter auto-popolare importo + collaboratoreId.
+                  <>
+                  <Select
+                    value={formData.collaboratoreId || ""}
+                    disabled={!!editingCosto}
+                    onValueChange={(value) => {
+                      const c = dipendentiAttivi.find(d => d.id === value);
+                      if (!c) return;
+                      setFormData(prev => ({
+                        ...prev,
+                        collaboratoreId: c.id,
+                        fornitore: `${c.nome} ${c.cognome}`.trim(),
+                        // Auto-popola l'importo solo se lo stipendio è
+                        // visibile (admin). Per i non-admin il campo rimane
+                        // editabile manualmente.
+                        importo: typeof c.stipendioMensile === 'number' && c.stipendioMensile > 0
+                          ? c.stipendioMensile
+                          : prev.importo,
+                      }));
+                    }}
+                  >
+                    <SelectTrigger id="fornitore" aria-label="Seleziona dipendente">
+                      <SelectValue placeholder={dipendentiAttivi.length === 0
+                        ? "Nessun dipendente configurato"
+                        : "Seleziona un dipendente..."} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {dipendentiAttivi.length === 0 ? (
+                        <div className="px-2 py-2 text-sm text-gray-500">
+                          Nessun dipendente attivo. Vai in Anagrafica Collaboratori per configurarli.
+                        </div>
+                      ) : (
+                        dipendentiAttivi.map(c => (
+                          <SelectItem key={c.id} value={c.id}>
+                            {c.nome} {c.cognome}
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                  {editingCosto && (
+                    <p className="text-xs text-gray-500">
+                      Il dipendente associato alla busta paga non è modificabile. Per cambiarlo, elimina e ricrea la busta.
+                    </p>
+                  )}
+                  </>
+                ) : (
+                  <>
+                    <Input
+                      id="fornitore"
+                      list="fornitori-costi-generali"
+                      value={formData.fornitore}
+                      onChange={(e) => setFormData(prev => ({ ...prev, fornitore: e.target.value }))}
+                      placeholder="Inizia a scrivere o scegli uno già usato..."
+                      autoComplete="off"
+                      required
+                    />
+                    {/* Autocomplete nativo: elenco fornitori già presenti nei costi
+                        generali. L'utente può comunque digitarne uno nuovo. */}
+                    <datalist id="fornitori-costi-generali">
+                      {Array.from(new Set(costi.map(c => c.fornitore?.trim()).filter(Boolean)))
+                        .sort((a, b) => (a as string).localeCompare(b as string, 'it'))
+                        .map(f => <option key={f} value={f} />)}
+                    </datalist>
+                  </>
+                )}
               </div>
             </div>
 
@@ -498,7 +700,7 @@ export default function CostiGenerali() {
             <div className="space-y-2">
               <Label htmlFor="importo">Importo *</Label>
               <div className="relative">
-                <Euro className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Euro className={`absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 ${formData.categoria === "stipendi" ? "text-gray-300" : "text-gray-400"}`} />
                 <Input
                   id="importo"
                   type="number"
@@ -506,9 +708,15 @@ export default function CostiGenerali() {
                   className="pl-9"
                   value={formData.importo}
                   onChange={(e) => setFormData(prev => ({ ...prev, importo: e.target.value }))}
+                  disabled={formData.categoria === "stipendi"}
                   required
                 />
               </div>
+              {formData.categoria === "stipendi" && (
+                <p className="text-xs text-gray-500">
+                  L'importo è lo stipendio del dipendente. Per modificarlo vai in Anagrafica → Collaboratori.
+                </p>
+              )}
             </div>
 
             <div className="flex items-center justify-between p-3 rounded-lg border border-gray-200 bg-gray-50">
@@ -592,6 +800,103 @@ export default function CostiGenerali() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Dialog: generazione buste paga del mese */}
+      <Dialog open={stipendiDialogOpen} onOpenChange={setStipendiDialogOpen}>
+        <DialogContent className="max-h-[90vh] flex flex-col sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5" />
+              Genera Buste Paga del Mese
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4 overflow-y-auto px-1 py-1 flex-1">
+            <div className="space-y-2">
+              <Label htmlFor="periodo-stipendi">Mese di riferimento</Label>
+              <Select value={selectedPeriodo} onValueChange={setSelectedPeriodo}>
+                <SelectTrigger id="periodo-stipendi">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {monthOptions.map(opt => (
+                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {isLoadingAnteprima ? (
+              <div className="animate-pulse space-y-2">
+                <div className="h-10 bg-gray-200 rounded-md" />
+                <div className="h-10 bg-gray-200 rounded-md" />
+              </div>
+            ) : !anteprima || anteprima.dipendenti.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-gray-300 p-6 text-center text-sm text-gray-500">
+                Nessun dipendente configurato.<br />
+                Vai in <span className="font-medium">Sistema → Collaboratori</span>, attiva il flag <span className="font-medium">Dipendente</span> e imposta lo stipendio mensile.
+              </div>
+            ) : (
+              <>
+                <div className="rounded-lg border border-gray-200">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Dipendente</TableHead>
+                        <TableHead className="text-right">Stipendio</TableHead>
+                        <TableHead className="text-center">Stato</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {anteprima.dipendenti.map(d => (
+                        <TableRow key={d.id}>
+                          <TableCell className="font-medium">{d.nome} {d.cognome}</TableCell>
+                          <TableCell className="text-right font-semibold">{formatCurrency(d.stipendioMensile)}</TableCell>
+                          <TableCell className="text-center">
+                            {d.alreadyGenerated ? (
+                              <Badge variant="secondary" className="gap-1">
+                                <CheckCircle2 className="h-3 w-3" />
+                                Già generato
+                              </Badge>
+                            ) : (
+                              <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">Da creare</Badge>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+
+                <div className="flex items-center justify-between rounded-lg bg-gray-50 border border-gray-200 p-3 text-sm">
+                  <span className="text-gray-600">Totale da creare</span>
+                  <span className="font-semibold text-lg">{formatCurrency(anteprima.totaleDaCreare)}</span>
+                </div>
+              </>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setStipendiDialogOpen(false)}>
+              Annulla
+            </Button>
+            <Button
+              onClick={() => generaStipendiMutation.mutate(selectedPeriodo)}
+              disabled={
+                generaStipendiMutation.isPending ||
+                !anteprima ||
+                anteprima.daCreare === 0
+              }
+            >
+              {generaStipendiMutation.isPending
+                ? "Generazione in corso..."
+                : anteprima && anteprima.daCreare > 0
+                  ? `Genera ${anteprima.daCreare} ${anteprima.daCreare === 1 ? 'busta paga' : 'buste paga'}`
+                  : "Nessuna da generare"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -260,7 +260,8 @@ export interface UserWithPassword extends InsertUser {
 // ============================================================================
 // Collaboratori Schema (anagrafica aziendale — solo admin)
 // ============================================================================
-export const insertCollaboratoreSchema = z.object({
+// Base object (senza refine) — usato per .partial() in update
+const collaboratoreBaseSchema = z.object({
   nome: z.string().min(1, "Il nome e' obbligatorio"),
   cognome: z.string().min(1, "Il cognome e' obbligatorio"),
   email: z.string().email("Email non valida").optional().or(z.literal('')),
@@ -268,8 +269,22 @@ export const insertCollaboratoreSchema = z.object({
   ruolo: z.string().optional(), // es. "Ingegnere", "Geometra", "Tecnico"
   costoOrario: z.number().positive("Il costo orario deve essere positivo"),
   active: z.boolean().default(true),
+  // Flag dipendente (payroll interno). Se true, stipendioMensile alimenta
+  // la generazione automatica dei costi "stipendi" in Costi Generali.
+  // Default false → consulente esterno, gestito via Fatture Consulenti.
+  isDipendente: z.boolean().default(false),
+  stipendioMensile: z.number().positive("Lo stipendio deve essere positivo").optional(),
   note: z.string().optional(),
 });
+
+export const insertCollaboratoreSchema = collaboratoreBaseSchema.refine(
+  (d) => !d.isDipendente || (typeof d.stipendioMensile === 'number' && d.stipendioMensile > 0),
+  { message: "Lo stipendio mensile è obbligatorio per i dipendenti", path: ["stipendioMensile"] }
+);
+// Update: niente refine cross-field — non vediamo il record completo in un
+// PATCH parziale (es. toggle "active" senza toccare dipendente/stipendio).
+// La coerenza la garantisce il POST e la UI.
+export const updateCollaboratoreSchema = collaboratoreBaseSchema.partial();
 
 export type InsertCollaboratore = z.infer<typeof insertCollaboratoreSchema>;
 
@@ -361,6 +376,7 @@ export const insertCostoGeneraleSchema = z.object({
     "multe",
     "assicurazioni",
     "commercialista",
+    "stipendi",
     "altro"
   ]),
   fornitore: z.string().min(1, "Il fornitore è obbligatorio"),
@@ -371,6 +387,11 @@ export const insertCostoGeneraleSchema = z.object({
   pagato: z.boolean().default(false),
   dataPagamento: z.string().optional(),
   allegato: z.string().optional(), // Path o URL del PDF
+  // Traceability per la categoria "stipendi": collega un costo al dipendente
+  // e al periodo di riferimento. Usati per idempotenza della generazione
+  // batch mensile e per la dashboard per-fornitore.
+  collaboratoreId: z.string().optional(),
+  periodo: z.string().regex(/^\d{4}-\d{2}$/, "Formato periodo: YYYY-MM").optional(),
   note: z.string().optional(),
 });
 

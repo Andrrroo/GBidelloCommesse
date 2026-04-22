@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { randomUUID } from 'crypto';
-import { costiViviStorage, costiGeneraliStorage } from '../storage.js';
+import { costiViviStorage, costiGeneraliStorage, collaboratoriStorage } from '../storage.js';
 import { insertCostoVivoSchema, insertCostoGeneraleSchema } from '@shared/schema';
 import { logActivity } from '../lib/activity-logger.js';
 import { logger } from '../lib/logger.js';
@@ -12,6 +12,29 @@ function formatEuroFromCents(cents: number): string {
 }
 function formatEuro(amount: number): string {
   return amount.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' });
+}
+
+const PERIODO_REGEX = /^\d{4}-(0[1-9]|1[0-2])$/;
+const MESI_IT = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
+
+function endOfMonthISO(periodo: string): string {
+  const [y, m] = periodo.split('-').map(Number);
+  // Day 0 del mese successivo = ultimo giorno del mese corrente (UTC per
+  // evitare slittamenti di fuso orario sulla parte di data).
+  const lastDay = new Date(Date.UTC(y, m, 0));
+  return lastDay.toISOString().slice(0, 10);
+}
+
+function meseItaliano(periodo: string): string {
+  const [y, m] = periodo.split('-').map(Number);
+  return `${MESI_IT[m - 1]} ${y}`;
+}
+
+// I costi "stipendi" sono informazione di payroll: non devono essere visibili
+// né modificabili da non-admin. Filtro/guard applicati a tutte le route REST
+// su /api/costi-generali oltre al sanitize già fatto su /api/collaboratori.
+function isAdminReq(req: import('express').Request): boolean {
+  return req.session?.user?.role === 'amministratore';
 }
 
 // --- Costi Vivi ---
@@ -83,38 +106,193 @@ costsRouter.delete('/api/costi-vivi/:id', async (req, res) => {
 
 // --- Costi Generali ---
 costsRouter.get('/api/costi-generali', async (req, res) => {
-  try { res.json(await costiGeneraliStorage.readAll()); }
-  catch { res.status(500).json({ error: 'Failed to fetch costi generali' }); }
+  try {
+    const all = await costiGeneraliStorage.readAll();
+    const visible = isAdminReq(req) ? all : all.filter(c => c.categoria !== 'stipendi');
+    res.json(visible);
+  } catch { res.status(500).json({ error: 'Failed to fetch costi generali' }); }
 });
 costsRouter.get('/api/costi-generali/:id', async (req, res) => {
   try {
     const c = await costiGeneraliStorage.findById(req.params.id);
-    c ? res.json(c) : res.status(404).json({ error: 'Costo not found' });
+    if (!c) return res.status(404).json({ error: 'Costo not found' });
+    // Stipendi non visibili a non-admin: 404 (non esporre l'esistenza).
+    if (c.categoria === 'stipendi' && !isAdminReq(req)) return res.status(404).json({ error: 'Costo not found' });
+    res.json(c);
   } catch (error) { logger.error('Request failed', { err: error, path: req.path, method: req.method }); res.status(500).json({ error: 'Failed to fetch costo' }); }
 });
 costsRouter.post('/api/costi-generali', async (req, res) => {
   try {
     const result = insertCostoGeneraleSchema.safeParse(req.body);
     if (!result.success) return res.status(400).json({ error: 'Validation error', details: result.error.flatten().fieldErrors });
-    const costo = { id: randomUUID(), ...result.data };
+    // Creazione stipendi riservata agli admin (payroll).
+    if (result.data.categoria === 'stipendi' && !isAdminReq(req)) {
+      return res.status(403).json({ error: 'Solo gli amministratori possono creare costi di categoria stipendi' });
+    }
+
+    // Per la categoria stipendi, importo/fornitore sono derivati dal
+    // collaboratore referenziato. L'eventuale valore inviato dal client è
+    // ignorato: lo stipendio si modifica solo dall'anagrafica collaboratori.
+    const data = { ...result.data };
+    if (data.categoria === 'stipendi') {
+      if (!data.collaboratoreId) {
+        return res.status(400).json({ error: 'collaboratoreId obbligatorio per la categoria stipendi' });
+      }
+      const collab = await collaboratoriStorage.findById(data.collaboratoreId);
+      if (!collab || !collab.active || !collab.isDipendente || typeof collab.stipendioMensile !== 'number' || collab.stipendioMensile <= 0) {
+        return res.status(400).json({ error: 'Dipendente non valido o senza stipendio configurato' });
+      }
+      data.importo = collab.stipendioMensile;
+      data.fornitore = `${collab.nome} ${collab.cognome}`.trim();
+    }
+
+    const costo = { id: randomUUID(), ...data };
     await costiGeneraliStorage.create(costo);
 
     await logActivity(req, {
       action: 'create',
       entityType: 'costo_generale',
       entityId: costo.id,
-      details: `${result.data.categoria} · ${result.data.fornitore} · ${formatEuro(result.data.importo)}`,
+      details: `${data.categoria} · ${data.fornitore} · ${formatEuro(data.importo)}`,
     });
 
     res.status(201).json(costo);
   } catch (error) { logger.error('Request failed', { err: error, path: req.path, method: req.method }); res.status(500).json({ error: 'Failed to create costo' }); }
 });
 
+// --- Generazione automatica buste paga del mese ---
+//
+// GET  /api/costi-generali/anteprima-stipendi/:periodo  → lista dipendenti con
+//      indicazione "già generato" per il mese, usata dal dialog prima di confermare.
+// POST /api/costi-generali/genera-stipendi-mese         → materializza un
+//      CostoGenerale "stipendi" per ogni dipendente attivo non ancora presente
+//      per il periodo. Idempotente: se già esistono, vengono skippati.
+
+costsRouter.get('/api/costi-generali/anteprima-stipendi/:periodo', async (req, res) => {
+  try {
+    const periodo = req.params.periodo;
+    if (!PERIODO_REGEX.test(periodo)) return res.status(400).json({ error: 'Periodo non valido (formato YYYY-MM)' });
+
+    const [collaboratori, costi] = await Promise.all([
+      collaboratoriStorage.readAll(),
+      costiGeneraliStorage.readAll(),
+    ]);
+    const giaGenerati = new Map<string, string>(); // collaboratoreId → costoId
+    for (const c of costi) {
+      if (c.categoria === 'stipendi' && c.periodo === periodo && c.collaboratoreId) {
+        giaGenerati.set(c.collaboratoreId, c.id);
+      }
+    }
+    const dipendenti = collaboratori
+      .filter(c => c.active && c.isDipendente && typeof c.stipendioMensile === 'number' && c.stipendioMensile > 0)
+      .map(c => ({
+        id: c.id,
+        nome: c.nome,
+        cognome: c.cognome,
+        stipendioMensile: c.stipendioMensile!,
+        alreadyGenerated: giaGenerati.has(c.id),
+        costoId: giaGenerati.get(c.id) ?? null,
+      }));
+
+    const daCreare = dipendenti.filter(d => !d.alreadyGenerated).length;
+    const totaleDaCreare = dipendenti
+      .filter(d => !d.alreadyGenerated)
+      .reduce((sum, d) => sum + d.stipendioMensile, 0);
+
+    res.json({ periodo, meseLabel: meseItaliano(periodo), dipendenti, daCreare, totaleDaCreare });
+  } catch (error) { logger.error('Request failed', { err: error, path: req.path, method: req.method }); res.status(500).json({ error: 'Failed to load anteprima stipendi' }); }
+});
+
+costsRouter.post('/api/costi-generali/genera-stipendi-mese', async (req, res) => {
+  try {
+    const periodo = typeof req.body?.periodo === 'string' ? req.body.periodo : '';
+    if (!PERIODO_REGEX.test(periodo)) return res.status(400).json({ error: 'Periodo non valido (formato YYYY-MM)' });
+
+    const [collaboratori, costi] = await Promise.all([
+      collaboratoriStorage.readAll(),
+      costiGeneraliStorage.readAll(),
+    ]);
+    const giaGenerati = new Set<string>();
+    for (const c of costi) {
+      if (c.categoria === 'stipendi' && c.periodo === periodo && c.collaboratoreId) {
+        giaGenerati.add(c.collaboratoreId);
+      }
+    }
+
+    const dataRiferimento = endOfMonthISO(periodo);
+    const meseLabel = meseItaliano(periodo);
+    const created: Array<{ id: string; collaboratoreId: string; fornitore: string; importo: number }> = [];
+    const skipped: Array<{ collaboratoreId: string; motivo: string }> = [];
+
+    for (const c of collaboratori) {
+      if (!c.active) continue;
+      if (!c.isDipendente) continue;
+      if (typeof c.stipendioMensile !== 'number' || c.stipendioMensile <= 0) {
+        skipped.push({ collaboratoreId: c.id, motivo: 'stipendioMensile mancante' });
+        continue;
+      }
+      if (giaGenerati.has(c.id)) {
+        skipped.push({ collaboratoreId: c.id, motivo: 'già generato' });
+        continue;
+      }
+      const costo = {
+        id: randomUUID(),
+        categoria: 'stipendi' as const,
+        fornitore: `${c.nome} ${c.cognome}`.trim(),
+        descrizione: `Busta paga ${meseLabel}`,
+        data: dataRiferimento,
+        importo: c.stipendioMensile,
+        pagato: false,
+        collaboratoreId: c.id,
+        periodo,
+      };
+      await costiGeneraliStorage.create(costo);
+      created.push({ id: costo.id, collaboratoreId: c.id, fornitore: costo.fornitore, importo: costo.importo });
+    }
+
+    await logActivity(req, {
+      action: 'create',
+      entityType: 'costo_generale',
+      entityId: `batch-stipendi-${periodo}`,
+      details: `Generazione stipendi ${meseLabel}: ${created.length} creati, ${skipped.length} skippati`,
+    });
+
+    res.status(201).json({ periodo, meseLabel, created, skipped });
+  } catch (error) { logger.error('Request failed', { err: error, path: req.path, method: req.method }); res.status(500).json({ error: 'Failed to generate stipendi' }); }
+});
+
 async function handleUpdateCostoGenerale(req: import('express').Request, res: import('express').Response) {
   try {
     const result = insertCostoGeneraleSchema.partial().safeParse(req.body);
     if (!result.success) return res.status(400).json({ error: 'Validation error', details: result.error.flatten().fieldErrors });
-    const updated = await costiGeneraliStorage.update(req.params.id, result.data);
+
+    const existing = await costiGeneraliStorage.findById(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Costo not found' });
+
+    // Guard stipendi per non-admin: nessuna modifica a record esistenti di
+    // categoria stipendi, né cambio di categoria verso stipendi.
+    if (!isAdminReq(req)) {
+      if (existing.categoria === 'stipendi') return res.status(404).json({ error: 'Costo not found' });
+      if (result.data.categoria === 'stipendi') {
+        return res.status(403).json({ error: 'Solo gli amministratori possono assegnare la categoria stipendi' });
+      }
+    }
+
+    // Se il record è stipendi, importo/fornitore/collaboratoreId sono immutabili
+    // dal form costi generali: lo stipendio si modifica solo dall'anagrafica
+    // collaboratori (e si ri-materializza nei batch futuri). Non permettiamo
+    // neppure di cambiare categoria di un costo stipendi in qualcos'altro:
+    // manterrebbe il link al dipendente con una categoria incongruente.
+    let patch = result.data;
+    if (existing.categoria === 'stipendi') {
+      if (patch.categoria !== undefined && patch.categoria !== 'stipendi') {
+        return res.status(400).json({ error: 'Non è possibile cambiare categoria a un record stipendi' });
+      }
+      const { importo, fornitore, collaboratoreId, periodo, ...rest } = patch;
+      patch = rest;
+    }
+
+    const updated = await costiGeneraliStorage.update(req.params.id, patch);
     if (!updated) return res.status(404).json({ error: 'Costo not found' });
 
     // Se è stato toccato `pagato` lo trattiamo come payment event
@@ -137,6 +315,10 @@ costsRouter.patch('/api/costi-generali/:id', handleUpdateCostoGenerale);
 costsRouter.delete('/api/costi-generali/:id', async (req, res) => {
   try {
     const costo = await costiGeneraliStorage.findById(req.params.id);
+    // Stipendi non eliminabili da non-admin (e invisibili → 404).
+    if (costo && costo.categoria === 'stipendi' && !isAdminReq(req)) {
+      return res.status(404).json({ error: 'Costo not found' });
+    }
     const deleted = await costiGeneraliStorage.delete(req.params.id);
     if (!deleted) return res.status(404).json({ error: 'Costo not found' });
 

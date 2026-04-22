@@ -32,6 +32,8 @@ export default function CollaboratoriManagement() {
     ruolo: "",
     costoOrario: "" as string | number,
     active: true,
+    isDipendente: false,
+    stipendioMensile: "" as string | number,
     note: "",
   };
   const [formData, setFormData] = useState(emptyForm);
@@ -103,6 +105,8 @@ export default function CollaboratoriManagement() {
       ruolo: c.ruolo || "",
       costoOrario: c.costoOrario,
       active: c.active,
+      isDipendente: c.isDipendente ?? false,
+      stipendioMensile: c.stipendioMensile ?? "",
       note: c.note || "",
     });
     setIsDialogOpen(true);
@@ -118,6 +122,14 @@ export default function CollaboratoriManagement() {
     if (!cleanData.telefono) delete cleanData.telefono;
     if (!cleanData.ruolo) delete cleanData.ruolo;
     if (!cleanData.note) delete cleanData.note;
+
+    // stipendioMensile: se non dipendente → non invio il campo. Se dipendente,
+    // parse a numero; 0 o vuoto fallisce la validazione Zod (positive).
+    if (cleanData.isDipendente) {
+      cleanData.stipendioMensile = parseFloat(String(formData.stipendioMensile)) || 0;
+    } else {
+      delete cleanData.stipendioMensile;
+    }
 
     if (editing) {
       updateMutation.mutate({ id: editing.id, data: cleanData });
@@ -154,9 +166,11 @@ export default function CollaboratoriManagement() {
             <TableHeader>
               <TableRow>
                 <TableHead>Nome</TableHead>
+                <TableHead>Tipo</TableHead>
                 <TableHead>Ruolo</TableHead>
                 <TableHead>Contatti</TableHead>
                 <TableHead className="text-right">Costo Orario</TableHead>
+                <TableHead className="text-right">Stipendio Mens.</TableHead>
                 <TableHead className="text-center">Stato</TableHead>
                 <TableHead className="text-right">Azioni</TableHead>
               </TableRow>
@@ -165,6 +179,13 @@ export default function CollaboratoriManagement() {
               {collaboratori.map((c) => (
                 <TableRow key={c.id}>
                   <TableCell className="font-medium">{c.nome} {c.cognome}</TableCell>
+                  <TableCell>
+                    {c.isDipendente ? (
+                      <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">Dipendente</Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-gray-600">Consulente</Badge>
+                    )}
+                  </TableCell>
                   <TableCell className="text-gray-600">{c.ruolo ? getRoleLabel(c.ruolo) : "-"}</TableCell>
                   <TableCell className="text-xs text-gray-500">
                     {c.email && <div>{c.email}</div>}
@@ -173,6 +194,9 @@ export default function CollaboratoriManagement() {
                   </TableCell>
                   <TableCell className="text-right font-semibold">
                     {formatCurrency(c.costoOrario)}/h
+                  </TableCell>
+                  <TableCell className="text-right font-semibold">
+                    {c.isDipendente && typeof c.stipendioMensile === 'number' ? formatCurrency(c.stipendioMensile) : <span className="text-gray-400">-</span>}
                   </TableCell>
                   <TableCell className="text-center">
                     <Badge variant={c.active ? "default" : "secondary"}>
@@ -287,6 +311,44 @@ export default function CollaboratoriManagement() {
                     onChange={(e) => setFormData(prev => ({ ...prev, costoOrario: e.target.value }))}
                     required
                   />
+                </div>
+              </div>
+
+              <div className="rounded-lg border-2 border-blue-200 bg-blue-50/60 p-3 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label htmlFor="isDipendente" className="font-semibold cursor-pointer text-blue-900">Dipendente (busta paga automatica)</Label>
+                    <p className="text-xs text-blue-700/80 mt-0.5">Se attivo, la busta paga viene generata mensilmente in Costi Generali</p>
+                  </div>
+                  <Switch
+                    id="isDipendente"
+                    className="data-[state=checked]:bg-blue-600 data-[state=unchecked]:bg-gray-300"
+                    checked={formData.isDipendente}
+                    onCheckedChange={(checked) => setFormData(prev => ({ ...prev, isDipendente: checked }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label
+                    htmlFor="stipendioMensile"
+                    className={formData.isDipendente ? "text-blue-900" : "text-gray-400"}
+                  >
+                    Stipendio Mensile (EUR) {formData.isDipendente && <span className="text-red-500">*</span>}
+                  </Label>
+                  <div className="relative">
+                    <Euro className={`absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 ${formData.isDipendente ? 'text-gray-500' : 'text-gray-300'}`} />
+                    <Input
+                      id="stipendioMensile"
+                      type="number"
+                      step="50"
+                      min="0"
+                      className="pl-9"
+                      placeholder={formData.isDipendente ? "es. 1800" : "Attiva \"Dipendente\" per impostare lo stipendio"}
+                      disabled={!formData.isDipendente}
+                      value={formData.stipendioMensile}
+                      onChange={(e) => setFormData(prev => ({ ...prev, stipendioMensile: e.target.value }))}
+                      required={formData.isDipendente}
+                    />
+                  </div>
                 </div>
               </div>
 

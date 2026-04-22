@@ -51,8 +51,11 @@ export default function EntrateUsciteChart({ isAdmin = false }: Props) {
   const entratePerCliente = aggregate(fattureEmesse, f => f.cliente, f => f.importoTotale);
   const totaleEntrate = entratePerCliente.reduce((s, x) => s + x.value, 0);
 
-  // Uscite: fatture ingresso (centesimi / 100) + consulenti (euro) + costi generali (euro)
+  // Uscite: fatture ingresso (centesimi / 100) + consulenti (euro) + costi generali (euro).
+  // Gli stipendi sono uscite "per dipendente", non "per fornitore": vengono esclusi
+  // dalla pie "Uscite per Fornitore" ma restano nel totale uscite aggregato.
   const mapFornitori = new Map<string, number>();
+  let totaleStipendi = 0;
   for (const f of fattureIngresso) {
     const key = f.fornitore || "Non specificato";
     mapFornitori.set(key, (mapFornitori.get(key) || 0) + (f.importo / 100));
@@ -63,6 +66,10 @@ export default function EntrateUsciteChart({ isAdmin = false }: Props) {
       mapFornitori.set(key, (mapFornitori.get(key) || 0) + f.importo);
     }
     for (const c of costiGenerali) {
+      if (c.categoria === "stipendi") {
+        totaleStipendi += c.importo;
+        continue;
+      }
       const key = c.fornitore || "Non specificato";
       mapFornitori.set(key, (mapFornitori.get(key) || 0) + c.importo);
     }
@@ -71,7 +78,9 @@ export default function EntrateUsciteChart({ isAdmin = false }: Props) {
   mapFornitori.forEach((value, name) => {
     if (value > 0) uscitePerFornitore.push({ name, value });
   });
-  const totaleUscite = uscitePerFornitore.reduce((s, x) => s + x.value, 0);
+  // Totale uscite include anche gli stipendi (per accuratezza del saldo), ma
+  // il grafico a torta sopra riflette solo i fornitori non-stipendiali.
+  const totaleUscite = uscitePerFornitore.reduce((s, x) => s + x.value, 0) + totaleStipendi;
 
   const saldo = totaleEntrate - totaleUscite;
   const saldoPositivo = saldo >= 0;

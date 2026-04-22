@@ -1,16 +1,18 @@
 import { Router } from 'express';
 import { randomUUID } from 'crypto';
 import { collaboratoriStorage, projectResourcesStorage } from '../storage.js';
-import { insertCollaboratoreSchema } from '@shared/schema';
+import { insertCollaboratoreSchema, updateCollaboratoreSchema } from '@shared/schema';
 import { logActivity } from '../lib/activity-logger.js';
 import { logger } from '../lib/logger.js';
 
 export const collaboratoriRouter = Router();
 
-// Rimuove il costoOrario dalla risposta se l'utente non e' admin
+// Rimuove campi stipendiali sensibili dalla risposta se l'utente non e' admin.
+// costoOrario e stipendioMensile sono informazioni di payroll: i collaboratori
+// non devono vederli degli altri colleghi.
 function sanitize(c: any, isAdmin: boolean) {
   if (isAdmin) return c;
-  const { costoOrario, ...rest } = c;
+  const { costoOrario, stipendioMensile, ...rest } = c;
   return rest;
 }
 
@@ -54,7 +56,7 @@ collaboratoriRouter.post('/api/collaboratori', async (req, res) => {
 
 collaboratoriRouter.put('/api/collaboratori/:id', async (req, res) => {
   try {
-    const result = insertCollaboratoreSchema.partial().safeParse(req.body);
+    const result = updateCollaboratoreSchema.safeParse(req.body);
     if (!result.success) return res.status(400).json({ error: 'Validation error', details: result.error.flatten().fieldErrors });
     const updated = await collaboratoriStorage.update(req.params.id, result.data);
     if (!updated) return res.status(404).json({ error: 'Collaboratore not found' });
