@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from "recharts";
@@ -5,6 +6,7 @@ import { Wrench, HardHat } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { formatCurrency } from "@/lib/financial-utils";
 import { useAuth } from "@/hooks/useAuth";
+import { YearFilter, ALL_YEARS, getYearFromISO, collectYears } from "@/components/shared/year-filter";
 import type { FatturaEmessa, Project } from "@shared/schema";
 
 const COLORS = {
@@ -15,6 +17,7 @@ const COLORS = {
 export default function IncassiManutenzioneChart() {
   const { user } = useAuth();
   const isAdmin = user?.role === "amministratore";
+  const [selectedYear, setSelectedYear] = useState<string>(ALL_YEARS);
 
   const { data: fattureEmesse = [] } = useQuery<FatturaEmessa[]>({
     queryKey: ["/api/fatture-emesse"],
@@ -31,13 +34,18 @@ export default function IncassiManutenzioneChart() {
   // Guard difensivo: il widget è gated in dashboard.tsx per i collaboratori.
   if (!isAdmin) return null;
 
+  // Anni disponibili dalle fatture emesse (filtriamo solo quelle incassate, ma
+  // per il dropdown mostriamo tutti gli anni con attività fatturale).
+  const availableYears = collectYears<FatturaEmessa>([[fattureEmesse, 'dataEmissione']]);
+  const filterYear = selectedYear === ALL_YEARS ? null : Number(selectedYear);
+
   // Mappa rapida projectId -> manutenzione
   const projectMap = new Map<string, boolean>();
   for (const p of projects) {
     projectMap.set(p.id, !!p.manutenzione);
   }
 
-  // Conta solo le fatture incassate
+  // Conta solo le fatture incassate (e nell'anno selezionato)
   let totaleManutenzione = 0;
   let totaleNuovoLavoro = 0;
   let countManutenzione = 0;
@@ -45,6 +53,7 @@ export default function IncassiManutenzioneChart() {
 
   for (const f of fattureEmesse) {
     if (!f.incassata) continue;
+    if (filterYear !== null && getYearFromISO(f.dataEmissione) !== filterYear) continue;
     const isManutenzione = projectMap.get(f.projectId) ?? false;
     if (isManutenzione) {
       totaleManutenzione += f.importo;
@@ -105,16 +114,23 @@ export default function IncassiManutenzioneChart() {
     );
   };
 
+  const yearLabel = selectedYear === ALL_YEARS ? "Tutti gli anni" : selectedYear;
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Wrench className="h-5 w-5 text-orange-600" />
-          Incassi: Manutenzione vs Lavoro Professionale
-        </CardTitle>
-        <CardDescription>
-          Ripartizione percentuale degli incassi totali per tipologia di commessa
-        </CardDescription>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Wrench className="h-5 w-5 text-orange-600" />
+              Incassi: Manutenzione vs Lavoro Professionale <span className="text-sm font-normal text-gray-500">— {yearLabel}</span>
+            </CardTitle>
+            <CardDescription>
+              Ripartizione percentuale degli incassi totali per tipologia di commessa
+            </CardDescription>
+          </div>
+          <YearFilter value={selectedYear} onChange={setSelectedYear} years={availableYears} data-testid="select-incassi-manutenzione-year" />
+        </div>
       </CardHeader>
       <CardContent>
         {/* Riepilogo numerico */}

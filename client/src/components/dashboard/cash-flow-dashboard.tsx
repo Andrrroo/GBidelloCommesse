@@ -1,7 +1,9 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { YearFilter, ALL_YEARS } from "@/components/shared/year-filter";
 import { apiRequest } from "@/lib/queryClient";
 import { formatCurrency } from "@/lib/financial-utils";
 import {
@@ -36,6 +38,8 @@ interface CashFlowData {
   };
   saldo: number;
   saldoPrevisionale: number;
+  availableYears: number[];
+  year: number | null;
 }
 
 interface CashFlowDashboardProps {
@@ -43,11 +47,16 @@ interface CashFlowDashboardProps {
 }
 
 export default function CashFlowDashboard({ isAdmin = false }: CashFlowDashboardProps) {
+  const [selectedYear, setSelectedYear] = useState<string>(ALL_YEARS);
+
   // Endpoint admin-only: evita fetch 403 per i collaboratori e nasconde la card.
   const { data: cashFlow, isLoading } = useQuery<CashFlowData>({
-    queryKey: ["/api/cash-flow"],
+    queryKey: ["/api/cash-flow", selectedYear],
     queryFn: async () => {
-      const response = await apiRequest("GET", "/api/cash-flow");
+      const url = selectedYear === ALL_YEARS
+        ? "/api/cash-flow"
+        : `/api/cash-flow?year=${selectedYear}`;
+      const response = await apiRequest("GET", url);
       if (!response.ok) throw new Error("Failed to fetch");
       return response.json();
     },
@@ -56,14 +65,19 @@ export default function CashFlowDashboard({ isAdmin = false }: CashFlowDashboard
 
   if (!isAdmin) return null;
 
+  const yearLabel = selectedYear === ALL_YEARS ? "Tutti gli anni" : selectedYear;
+
   if (isLoading) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Wallet className="h-5 w-5" />
-            Cash Flow
-          </CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <Wallet className="h-5 w-5" />
+              Cash Flow
+            </CardTitle>
+            <YearFilter value={selectedYear} onChange={setSelectedYear} years={[]} data-testid="select-cashflow-year" />
+          </div>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
@@ -83,10 +97,13 @@ export default function CashFlowDashboard({ isAdmin = false }: CashFlowDashboard
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Wallet className="h-5 w-5" />
-          Cash Flow
-        </CardTitle>
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2">
+            <Wallet className="h-5 w-5" />
+            Cash Flow <span className="text-sm font-normal text-gray-500">— {yearLabel}</span>
+          </CardTitle>
+          <YearFilter value={selectedYear} onChange={setSelectedYear} years={cashFlow.availableYears || []} data-testid="select-cashflow-year" />
+        </div>
       </CardHeader>
       <CardContent className="space-y-6">
         {/* Saldo principale */}

@@ -16,6 +16,7 @@ import { format, parseISO } from "date-fns";
 import { it } from "date-fns/locale";
 import { Trash2, Plus, Edit2, Car, CreditCard, Home, Coffee, MapPin, Route, Target, ArrowUp, ArrowDown, X } from "lucide-react";
 import { User } from "@/hooks/useAuth";
+import { YearFilter, ALL_YEARS, getYearFromISO, collectYears } from "@/components/shared/year-filter";
 
 interface CostoVivo {
   id: string;
@@ -59,6 +60,7 @@ export default function CostiVivi({ user }: CostiViviProps) {
   // Filtri e ordinamento (pattern coerente con costi-generali e fatture)
   const [filterProjectId, setFilterProjectId] = useState<string>('all');
   const [filterTipologia, setFilterTipologia] = useState<string>('all');
+  const [filterYear, setFilterYear] = useState<string>(ALL_YEARS);
   const [sortBy, setSortBy] = useState<'data' | 'importo'>('data');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
 
@@ -210,10 +212,15 @@ export default function CostiVivi({ user }: CostiViviProps) {
     ? costiVivi
     : costiVivi.filter(c => c.userId === user?.id);
 
+  // Anni disponibili dai costi-vivi (data di sostenimento)
+  const availableYears = collectYears<CostoVivo>([[visibleCostiVivi, 'data']]);
+  const yearNum = filterYear === ALL_YEARS ? null : Number(filterYear);
+
   // Filtri utente (applicati sopra quello permessi)
   const filteredCostiVivi = visibleCostiVivi.filter(c => {
     if (filterProjectId !== 'all' && c.projectId !== filterProjectId) return false;
     if (filterTipologia !== 'all' && c.tipologia !== filterTipologia) return false;
+    if (yearNum !== null && getYearFromISO(c.data) !== yearNum) return false;
     return true;
   });
 
@@ -473,6 +480,8 @@ export default function CostiVivi({ user }: CostiViviProps) {
           </SelectContent>
         </Select>
 
+        <YearFilter value={filterYear} onChange={setFilterYear} years={availableYears} data-testid="filter-year-costi-vivi" />
+
         <div className="flex items-center gap-2">
           <Select value={sortBy} onValueChange={(v) => setSortBy(v as typeof sortBy)}>
             <SelectTrigger className="w-[200px]" aria-label="Criterio di ordinamento">
@@ -496,11 +505,11 @@ export default function CostiVivi({ user }: CostiViviProps) {
           </Button>
         </div>
 
-        {(filterProjectId !== 'all' || filterTipologia !== 'all') && (
+        {(filterProjectId !== 'all' || filterTipologia !== 'all' || filterYear !== ALL_YEARS) && (
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => { setFilterProjectId('all'); setFilterTipologia('all'); }}
+            onClick={() => { setFilterProjectId('all'); setFilterTipologia('all'); setFilterYear(ALL_YEARS); }}
             className="text-gray-500 hover:text-gray-700 gap-1"
             data-testid="reset-filters-costi-vivi"
           >

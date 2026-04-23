@@ -7,6 +7,7 @@ import { useState } from "react";
 import { TrendingDown, TrendingUp, AlertCircle, AlertTriangle, DollarSign, Receipt, Users, CreditCard, Package } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { formatCurrencyFromCents } from "@/lib/financial-utils";
+import { YearFilter, ALL_YEARS, getYearFromISO } from "@/components/shared/year-filter";
 
 interface FatturaIngresso {
   id: string;
@@ -61,6 +62,7 @@ interface CentrodiCosto {
 
 export default function CentroCostoDashboard() {
   const [selectedProjectId, setSelectedProjectId] = useState<string>("all");
+  const [selectedYear, setSelectedYear] = useState<string>(ALL_YEARS);
 
   // Fetch all data
   const { data: projects = [] } = useQuery<Project[]>({
@@ -79,6 +81,21 @@ export default function CentroCostoDashboard() {
     queryKey: ["/api/project-resources"],
   });
 
+  // Anni disponibili dai dati con campi temporali (fatture/costi vivi) — risorse
+  // non hanno data, quindi quando l'utente filtra per anno le ore lavorate non
+  // rientrano nel conteggio per quell'anno (si conta solo spesa fatturata).
+  const yearSet = new Set<number>();
+  for (const f of fattureIngresso) { const y = getYearFromISO(f.dataEmissione); if (y) yearSet.add(y); }
+  for (const c of costiVivi) { const y = getYearFromISO(c.data); if (y) yearSet.add(y); }
+  const availableYears = Array.from(yearSet).filter(y => y >= 2025).sort((a, b) => b - a);
+
+  const filterYear = selectedYear === ALL_YEARS ? null : Number(selectedYear);
+  const fattureIngressoF = filterYear === null ? fattureIngresso : fattureIngresso.filter(f => getYearFromISO(f.dataEmissione) === filterYear);
+  const costiViviF = filterYear === null ? costiVivi : costiVivi.filter(c => getYearFromISO(c.data) === filterYear);
+  // Resources: non hanno data di competenza → quando filtro per anno, le escludo
+  // dal calcolo "riservaHumana" (altrimenti darei ore su un anno in cui non sono state fatte).
+  const resourcesF = filterYear === null ? resources : [];
+
   // Calculate cost centers
   // Regola di selezione iniziale:
   //   - 'all'           => solo commesse in corso (default)
@@ -91,9 +108,9 @@ export default function CentroCostoDashboard() {
       return true; // un id specifico: lascio passare, il secondo filter più sotto seleziona
     })
     .map(project => {
-      const fattureProgetto = fattureIngresso.filter(f => f.projectId === project.id);
-      const costiViviProgetto = costiVivi.filter(c => c.projectId === project.id);
-      const resourcesProgetto = resources.filter(r => r.projectId === project.id);
+      const fattureProgetto = fattureIngressoF.filter(f => f.projectId === project.id);
+      const costiViviProgetto = costiViviF.filter(c => c.projectId === project.id);
+      const resourcesProgetto = resourcesF.filter(r => r.projectId === project.id);
 
       // Calcola costi per categoria (tutti in centesimi per coerenza con le barre progress)
       const materiali = fattureProgetto
@@ -147,15 +164,21 @@ export default function CentroCostoDashboard() {
 
   const formatCurrency = formatCurrencyFromCents;
 
+  const yearLabel = selectedYear === ALL_YEARS ? "Tutti gli anni" : selectedYear;
+
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex justify-between items-start">
+      <div className="flex justify-between items-start gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Dashboard Centro di Costo</h2>
+          <h2 className="text-2xl font-bold text-gray-900">
+            Dashboard Centro di Costo <span className="text-sm font-normal text-gray-500">— {yearLabel}</span>
+          </h2>
           <p className="text-sm text-gray-500">Monitoraggio completo costi e budget per commessa</p>
         </div>
-        <div className="w-80">
+        <div className="flex items-center gap-3">
+          <YearFilter value={selectedYear} onChange={setSelectedYear} years={availableYears} data-testid="select-centro-costo-year" />
+          <div className="w-80">
           <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
             <SelectTrigger>
               <SelectValue placeholder="Filtra per commessa" />
@@ -170,6 +193,7 @@ export default function CentroCostoDashboard() {
               ))}
             </SelectContent>
           </Select>
+          </div>
         </div>
       </div>
 

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -15,14 +16,29 @@ import {
   PieChart as PieChartIcon, BarChart3, Target, AlertCircle
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { YearFilter, ALL_YEARS } from "@/components/shared/year-filter";
+
+// Normalizza project.year che può essere salvato come 25 (→ 2025) o 2025 intero.
+function normalizeYear(y: number): number {
+  return y < 100 ? 2000 + y : y;
+}
 
 export default function EconomicDashboardCard() {
   const { user } = useAuth();
   const isAdmin = user?.role === "amministratore";
-  const { data: projects = [], isLoading } = useQuery<Project[]>({
+  const [selectedYear, setSelectedYear] = useState<string>(ALL_YEARS);
+  const { data: allProjects = [], isLoading } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
     enabled: isAdmin,
   });
+
+  // Anni disponibili (da project.year ≥ 2025) e filtro commesse per anno scelto
+  const availableYears = Array.from(new Set(allProjects.map(p => normalizeYear(p.year))))
+    .filter(y => y >= 2025)
+    .sort((a, b) => b - a);
+  const filterYear = selectedYear === ALL_YEARS ? null : Number(selectedYear);
+  const projects = filterYear === null ? allProjects : allProjects.filter(p => normalizeYear(p.year) === filterYear);
+  const yearLabel = selectedYear === ALL_YEARS ? "Tutti gli anni" : selectedYear;
 
   // Guard difensivo: il tab/widget è già gated in dashboard.tsx per i
   // collaboratori, ma preveniamo render accidentali di valori economici.
@@ -138,19 +154,22 @@ export default function EconomicDashboardCard() {
   return (
     <Card className="col-span-full shadow-lg border-gray-200">
       <CardHeader className="pb-4">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-4">
           <div>
             <CardTitle className="text-2xl font-bold text-gray-900 flex items-center gap-2">
               <DollarSign className="h-6 w-6 text-green-600" />
-              Dashboard Economica
+              Dashboard Economica <span className="text-sm font-normal text-gray-500">— {yearLabel}</span>
             </CardTitle>
             <CardDescription className="mt-1">
               Panoramica economica delle commesse attive e concluse
             </CardDescription>
           </div>
-          <Badge variant="outline" className="text-sm px-3 py-1">
-            {projectsWithEconomicData.length} commesse valorizzate
-          </Badge>
+          <div className="flex items-center gap-3">
+            <Badge variant="outline" className="text-sm px-3 py-1">
+              {projectsWithEconomicData.length} commesse valorizzate
+            </Badge>
+            <YearFilter value={selectedYear} onChange={setSelectedYear} years={availableYears} data-testid="select-economic-year" />
+          </div>
         </div>
       </CardHeader>
 

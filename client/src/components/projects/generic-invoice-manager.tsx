@@ -18,6 +18,7 @@ import { Plus, Pencil, Trash2, Check, Clock, Euro, Download, FileText, Package, 
 import { PdfUpload } from "@/components/ui/pdf-upload";
 import { usePagination } from "@/hooks/usePagination";
 import { TablePagination } from "@/components/ui/table-pagination";
+import { YearFilter, ALL_YEARS, getYearFromISO, collectYears } from "@/components/shared/year-filter";
 import type { Project } from "@shared/schema";
 import {
   formatCurrency,
@@ -128,6 +129,7 @@ export default function GenericInvoiceManager({ config }: GenericInvoiceManagerP
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [filterEntity, setFilterEntity] = useState<string>("all");
   const [filterCategoria, setFilterCategoria] = useState<string>("all");
+  const [filterYear, setFilterYear] = useState<string>(ALL_YEARS);
   const [sortBy, setSortBy] = useState<'data' | 'importo'>('data');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
 
@@ -307,11 +309,16 @@ export default function GenericInvoiceManager({ config }: GenericInvoiceManagerP
     new Set(invoices.map(getEntityValue).filter(Boolean))
   ).sort((a, b) => a.localeCompare(b, 'it'));
 
+  // Anni disponibili dalle fatture (sulla dataEmissione)
+  const availableYears = collectYears<Invoice>([[invoices, 'dataEmissione']]);
+  const yearNum = filterYear === ALL_YEARS ? null : Number(filterYear);
+
   // Filtraggio
   const filteredInvoices = invoices.filter(inv => {
     if (filterProjectId !== "all" && inv.projectId !== filterProjectId) return false;
     if (filterEntity !== "all" && getEntityValue(inv) !== filterEntity) return false;
     if (config.includeCategoria && filterCategoria !== "all" && inv.categoria !== filterCategoria) return false;
+    if (yearNum !== null && getYearFromISO(inv.dataEmissione) !== yearNum) return false;
     const isPaid = inv[config.statusField] || false;
     if (filterStatus === "paid" && !isPaid) return false;
     if (filterStatus === "unpaid" && isPaid) return false;
@@ -342,7 +349,7 @@ export default function GenericInvoiceManager({ config }: GenericInvoiceManagerP
   const pagination = usePagination<Invoice>({
     data: sortedInvoices,
     pageSize: 25,
-    resetKey: `${filterProjectId}|${filterEntity}|${filterCategoria}|${filterStatus}|${sortBy}|${sortDirection}`,
+    resetKey: `${filterProjectId}|${filterEntity}|${filterCategoria}|${filterStatus}|${filterYear}|${sortBy}|${sortDirection}`,
   });
 
   // Totali (getAmount/getEntityValue definiti sopra)
@@ -421,6 +428,14 @@ export default function GenericInvoiceManager({ config }: GenericInvoiceManagerP
             </SelectContent>
           </Select>
 
+          <YearFilter
+            value={filterYear}
+            onChange={setFilterYear}
+            years={availableYears}
+            className="w-[150px]"
+            data-testid={`filter-year-${config.type}`}
+          />
+
           <div className="flex items-center gap-2">
             <Select value={sortBy} onValueChange={(v) => setSortBy(v as typeof sortBy)}>
               <SelectTrigger className="w-[200px]" aria-label="Criterio di ordinamento">
@@ -444,7 +459,7 @@ export default function GenericInvoiceManager({ config }: GenericInvoiceManagerP
             </Button>
           </div>
 
-          {(filterProjectId !== "all" || filterEntity !== "all" || filterCategoria !== "all" || filterStatus !== "all") && (
+          {(filterProjectId !== "all" || filterEntity !== "all" || filterCategoria !== "all" || filterStatus !== "all" || filterYear !== ALL_YEARS) && (
             <Button
               variant="ghost"
               size="sm"
@@ -453,6 +468,7 @@ export default function GenericInvoiceManager({ config }: GenericInvoiceManagerP
                 setFilterEntity("all");
                 setFilterCategoria("all");
                 setFilterStatus("all");
+                setFilterYear(ALL_YEARS);
               }}
               className="text-gray-500 hover:text-gray-700 gap-1"
               data-testid={`reset-filters-${config.type}`}

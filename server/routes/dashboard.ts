@@ -100,25 +100,47 @@ dashboardRouter.get('/api/fatture-in-scadenza', async (req, res) => {
 
 dashboardRouter.get('/api/cash-flow', async (req, res) => {
   try {
-    const fattureEmesse = await fattureEmesseStorage.readAll();
+    const yearParam = req.query.year ? Number(req.query.year) : null;
+    const getYear = (s?: string | null) => (s ? Number(String(s).slice(0, 4)) : null);
+
+    const [fattureEmesseAll, fattureIngressoAll, fattureConsulentiAll, costiViviAll, costiGeneraliAll] = await Promise.all([
+      fattureEmesseStorage.readAll(),
+      fattureIngressoStorage.readAll(),
+      fattureConsulentiStorage.readAll(),
+      costiViviStorage.readAll(),
+      costiGeneraliStorage.readAll(),
+    ]);
+
+    // Anni disponibili (dal 2025 in poi) calcolati prima di filtrare
+    const allYears = new Set<number>();
+    for (const f of fattureEmesseAll) { const y = getYear(f.dataEmissione); if (y) allYears.add(y); }
+    for (const f of fattureIngressoAll) { const y = getYear(f.dataEmissione); if (y) allYears.add(y); }
+    for (const f of fattureConsulentiAll) { const y = getYear(f.dataEmissione); if (y) allYears.add(y); }
+    for (const c of costiViviAll) { const y = getYear(c.data); if (y) allYears.add(y); }
+    for (const c of costiGeneraliAll) { const y = getYear(c.data); if (y) allYears.add(y); }
+    const availableYears = Array.from(allYears).filter(y => y >= 2025).sort((a, b) => b - a);
+
+    // Filtra per anno se specificato (usa campo data "di emissione/competenza")
+    const fattureEmesse = yearParam === null ? fattureEmesseAll : fattureEmesseAll.filter(f => getYear(f.dataEmissione) === yearParam);
+    const fattureIngresso = yearParam === null ? fattureIngressoAll : fattureIngressoAll.filter(f => getYear(f.dataEmissione) === yearParam);
+    const fattureConsulenti = yearParam === null ? fattureConsulentiAll : fattureConsulentiAll.filter(f => getYear(f.dataEmissione) === yearParam);
+    const costiVivi = yearParam === null ? costiViviAll : costiViviAll.filter(c => getYear(c.data) === yearParam);
+    const costiGenerali = yearParam === null ? costiGeneraliAll : costiGeneraliAll.filter(c => getYear(c.data) === yearParam);
+
     const totaleEmesso = fattureEmesse.reduce((acc, f) => acc + f.importo, 0);
     const totaleIncassato = fattureEmesse.filter(f => f.incassata).reduce((acc, f) => acc + f.importo, 0);
     const totaleDaIncassare = totaleEmesso - totaleIncassato;
 
-    const fattureIngresso = await fattureIngressoStorage.readAll();
     const totaleFattureIngresso = fattureIngresso.reduce((acc, f) => acc + f.importo, 0) / 100; // importi salvati in centesimi
     const totaleFattureIngressoPagate = fattureIngresso.filter(f => f.pagata).reduce((acc, f) => acc + f.importo, 0) / 100;
     const totaleFattureIngressoDaPagare = totaleFattureIngresso - totaleFattureIngressoPagate;
 
-    const fattureConsulenti = await fattureConsulentiStorage.readAll();
     const totaleFattureConsulenti = fattureConsulenti.reduce((acc, f) => acc + f.importo, 0);
     const totaleFattureConsulentiPagate = fattureConsulenti.filter(f => f.pagata).reduce((acc, f) => acc + f.importo, 0);
     const totaleFattureConsulentiDaPagare = totaleFattureConsulenti - totaleFattureConsulentiPagate;
 
-    const costiVivi = await costiViviStorage.readAll();
     const totaleCostiVivi = costiVivi.reduce((acc, c) => acc + c.importo, 0) / 100; // importi salvati in centesimi
 
-    const costiGenerali = await costiGeneraliStorage.readAll();
     const totaleCostiGenerali = costiGenerali.reduce((acc, c) => acc + c.importo, 0);
     const totaleCostiGeneraliPagati = costiGenerali.filter(c => c.pagato).reduce((acc, c) => acc + c.importo, 0);
     const totaleCostiGeneraliDaPagare = totaleCostiGenerali - totaleCostiGeneraliPagati;
@@ -139,7 +161,9 @@ dashboardRouter.get('/api/cash-flow', async (req, res) => {
         }
       },
       saldo: totaleIncassato - totaleUscitePagate,
-      saldoPrevisionale: totaleEmesso - totaleUscite
+      saldoPrevisionale: totaleEmesso - totaleUscite,
+      availableYears,
+      year: yearParam,
     });
   } catch (error) { logger.error('Request failed', { err: error, path: req.path, method: req.method }); res.status(500).json({ error: 'Failed to calculate cash flow' }); }
 });

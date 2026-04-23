@@ -19,6 +19,7 @@ import { formatCurrency, formatCurrencyFromCents, formatDate, toCents, fromCents
 import { usePagination } from "@/hooks/usePagination";
 import { TablePagination } from "@/components/ui/table-pagination";
 import { useAuth } from "@/hooks/useAuth";
+import { YearFilter, ALL_YEARS, getYearFromISO, collectYears } from "@/components/shared/year-filter";
 
 const CATEGORIE = {
   noleggio_auto: "Noleggio Auto",
@@ -63,6 +64,7 @@ export default function CostiGenerali() {
   const [filterCategoria, setFilterCategoria] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [filterFornitore, setFilterFornitore] = useState<string>("all");
+  const [filterYear, setFilterYear] = useState<string>(ALL_YEARS);
   const [sortBy, setSortBy] = useState<'data' | 'importo'>('data');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
 
@@ -383,11 +385,15 @@ export default function CostiGenerali() {
     new Set(costi.map(c => c.fornitore?.trim()).filter((v): v is string => !!v && v.length > 0))
   ).sort((a, b) => a.localeCompare(b, 'it'));
 
+  const availableYears = collectYears<CostoGenerale>([[costi, 'data']]);
+  const yearNum = filterYear === ALL_YEARS ? null : Number(filterYear);
+
   const filteredCosti = costi.filter(c => {
     if (filterCategoria !== "all" && c.categoria !== filterCategoria) return false;
     if (filterFornitore !== "all" && (c.fornitore || '').trim() !== filterFornitore) return false;
     if (filterStatus === "pagati" && !c.pagato) return false;
     if (filterStatus === "da_pagare" && c.pagato) return false;
+    if (yearNum !== null && getYearFromISO(c.data) !== yearNum) return false;
     return true;
   });
 
@@ -415,7 +421,7 @@ export default function CostiGenerali() {
   const pagination = usePagination<CostoGenerale>({
     data: sortedCosti,
     pageSize: 25,
-    resetKey: `${filterCategoria}|${filterFornitore}|${filterStatus}|${sortBy}|${sortDirection}`,
+    resetKey: `${filterCategoria}|${filterFornitore}|${filterStatus}|${filterYear}|${sortBy}|${sortDirection}`,
   });
 
   const totaleCosti = filteredCosti.reduce((acc, c) => acc + c.importo, 0);
@@ -461,6 +467,7 @@ export default function CostiGenerali() {
               <SelectItem value="da_pagare">Da pagare</SelectItem>
             </SelectContent>
           </Select>
+          <YearFilter value={filterYear} onChange={setFilterYear} years={availableYears} data-testid="filter-year-costi-generali" />
           <Select value={sortBy} onValueChange={(v) => setSortBy(v as typeof sortBy)}>
             <SelectTrigger className="w-[180px]" aria-label="Criterio di ordinamento">
               <SelectValue />
@@ -481,7 +488,7 @@ export default function CostiGenerali() {
               ? <ArrowUp className="h-4 w-4" aria-hidden="true" />
               : <ArrowDown className="h-4 w-4" aria-hidden="true" />}
           </Button>
-          {(filterCategoria !== "all" || filterFornitore !== "all" || filterStatus !== "all") && (
+          {(filterCategoria !== "all" || filterFornitore !== "all" || filterStatus !== "all" || filterYear !== ALL_YEARS) && (
             <Button
               variant="ghost"
               size="sm"
@@ -489,6 +496,7 @@ export default function CostiGenerali() {
                 setFilterCategoria("all");
                 setFilterFornitore("all");
                 setFilterStatus("all");
+                setFilterYear(ALL_YEARS);
               }}
               className="text-gray-500 hover:text-gray-700 gap-1"
               data-testid="reset-filters-costi-generali"
